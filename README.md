@@ -7,9 +7,9 @@ at LDAV 2023. Please see the paper (link soon!) for more details.
 
 ## Usage
 
-- [Skull](https://www.willusher.io/webgpu-prog-iso/) (256^3, issues on macOS)
-- [Magnetic Reconnection](https://www.willusher.io/webgpu-prog-iso/#magnetic) (512^3, ok on macOS)
-- [Chameleon](https://www.willusher.io/webgpu-prog-iso/#chameleon) (1024x1024x1080, issues on macOS)
+- [Skull](https://www.willusher.io/webgpu-prog-iso/) (256^3)
+- [Magnetic Reconnection](https://www.willusher.io/webgpu-prog-iso/#magnetic) (512^3)
+- [Chameleon](https://www.willusher.io/webgpu-prog-iso/#chameleon) (1024x1024x1080)
 
 The data sets are available on the [Open SciVis Data Sets page](https://klacansky.com/open-scivis-datasets/).
 
