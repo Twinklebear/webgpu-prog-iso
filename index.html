@@ -8,14 +8,14 @@
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css"
         integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
 
-    <title>WebGPU Volume Raycaster</title>
+    <title>WebGPU Speculative Progressive Isosurface Raycaster</title>
 </head>
 
 <body>
     <div class="container mt-4">
         <div class="row">
             <div class="col-12 text-center">
-                <h4>WebGPU Volume Raycaster</h4>
+                <h4>WebGPU Speculative Progressive Isosurface Raycaster</h4>
                 <canvas id="webgpu-canvas" class="img-fluid" width="1280" height="720"></canvas>
             </div>
             <img id="image">
@@ -48,6 +48,10 @@
                     <input type="checkbox" class="form-check-input" id="enableSpeculation">
                     <label for="enableSpeculation">Enable Speculation</label>
                 </div>
+            </div>
+            <div class="row col-12 col-lg-8 text-left mx-auto mb-2">
+                <p>See the paper for more details (link soon!), or checkout
+                the code on <a href="https://github.com/Twinklebear/webgpu-prog-iso">Github</a>!
             </div>
             <div class="row col-12 col-lg-8 text-left mx-auto mb-2">
                 <div class="col-12 row text-left">
