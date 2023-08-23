@@ -2,8 +2,8 @@
 
 This is the implementation of the GPU-parallel speculative, progressive
 implicit isosurface raycasting algorithm for
-block-compressed data sets described in "" by Will Usher, Landon Dyken, and Sidharth Kumar
-at LDAV 2023. Please see the paper (link soon!) for more details.
+block-compressed data sets described in "Speculative Progressive Raycasting for Memory Constrained Isosurface Visualization of Massive Volumes" by Will Usher, Landon Dyken, and Sidharth Kumar
+at LDAV 2023. Please [see the paper](https://www.willusher.io/publications/wgpu-prog-iso) for more details.
 
 ## Usage
 
