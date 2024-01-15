@@ -1,0 +1,47 @@
+#version 450 core
+
+#include "util.glsl"
+
+layout(local_size_x = 8, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, std430) buffer RayInformation {
+    RayInfo rays[];
+};
+
+layout(set = 0, binding = 1, std140) uniform VolumeParams
+{
+    uvec4 volume_dims;
+    uvec4 padded_dims;
+    vec4 volume_scale;
+
+    uint max_bits;
+    float isovalue;
+    uint image_width;
+};
+layout(set = 0, binding = 2, std430) buffer RayBlockIDs
+{
+    uint block_ids[];
+};
+
+layout(set = 0, binding = 3, std140) uniform ViewParams
+{
+    mat4 proj_view;
+    vec4 eye_pos;
+    vec4 eye_dir;
+    float near_plane;
+    uint current_pass_index;
+    uint speculation_count;
+};
+
+void main() {
+    if (gl_GlobalInvocationID.x >= image_width) {
+        return;
+    }
+    uint ray_index = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width;
+    rays[ray_index].ray_dir = vec3(0);
+    rays[ray_index].t = FLT_MAX;
+    for (uint i = 0; i < speculation_count; i++) {
+        block_ids[ray_index * speculation_count + i] = UINT_MAX;
+    }
+}
+

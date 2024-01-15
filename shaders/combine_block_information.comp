@@ -1,0 +1,55 @@
+#version 450 core
+
+#include "util.glsl"
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, std430) buffer BlockInformation
+{
+    BlockInfo blocks[];
+};
+
+layout(set = 0, binding = 1, std430) buffer BlockIDs
+{
+    uint block_ids[];
+};
+
+layout(set = 0, binding = 2, std430) buffer BlockRayOffset
+{
+    uint block_ray_offsets[];
+};
+
+layout(set = 0, binding = 3, std430) buffer BlockNumRays
+{
+    uint block_num_rays[];
+};
+
+layout(set = 0, binding = 4, std430) buffer BlockActive
+{
+    uint block_active[];
+};
+
+layout(set = 1, binding = 0, std140) uniform BlockIDOffset
+{
+    uint id_offset;
+    uint total_work_groups;
+    uint total_active_blocks;
+};
+
+void main(void)
+{
+    const uint item_idx = gl_GlobalInvocationID.x + id_offset * gl_WorkGroupSize.x;
+    if (item_idx >= total_active_blocks) {
+        return;
+    }
+    // Combine the buffers to fit in fewer storage buffers until limits are removed
+    // Note that 8 will be supported soon in Chromium so we could remove this
+    // This data is compacted down as it's run on the compacted block ids
+    const uint id = block_ids[item_idx];
+    blocks[item_idx].id = id;
+    blocks[item_idx].ray_offset = block_ray_offsets[item_idx];
+    blocks[item_idx].num_rays = block_num_rays[item_idx];
+    // We don't do LOD, just set to 0
+    blocks[item_idx].lod = 0;
+}
+

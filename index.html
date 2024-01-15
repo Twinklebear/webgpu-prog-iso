@@ -1,37 +1,112 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <!-- Bootstrap CSS -->
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css"
-                           integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm"
-                           crossorigin="anonymous">
+        integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
 
-    <title>WebGPU Webpack Starter</title>
+    <title>WebGPU Speculative Progressive Isosurface Raycaster</title>
 </head>
+
 <body>
     <div class="container mt-4">
         <div class="row">
             <div class="col-12 text-center">
-                <h4>WebGPU Webpack Starter</h4>
+                <h4>WebGPU Speculative Progressive Isosurface Raycaster</h4>
                 <canvas id="webgpu-canvas" class="img-fluid" width="1280" height="720"></canvas>
-                <div class="col-12 alert alert-danger" id="no-webgpu" style="display:none;">
-                    <h4>Error: Your browser does not support WebGPU</h4>
-                    <p>You can find out how to get access to it in Chrome Canary
-                    <a href="https://web.dev/gpu/#use">here</a>.</p>
+            </div>
+            <img id="image">
+            <div class="col-12 col-lg-8 mx-auto row">
+                <div class="form-group col-8">
+                    <label for="isovalue">Isovalue</label>
+                    <input type="range" class="form-control-range" id="isovalue" min="0.0" max="255.0" step="1">
+                </div>
+                <div class="form-group col-4">
+                    <select name="resolution" id="resolution">
+                        <option value="full">Full</option>
+                        <option value="half">Half</option>
+                        <option value="quarter">Quarter</option>
+                      </select>
+                    <label for="resolution">Resolution</label>
+                </div>
+                <div class="form-group col-3">
+                    <input type="checkbox" class="form-check-input" id="enableCache">
+                    <label for="enableCache">Enable Cache</label>
+                </div>
+                <div class="form-group col-3">
+                    <input type="checkbox" class="form-check-input" id="outputImages">
+                    <label for="outputImages">Output Images</label>
+                </div>
+                <div class="form-group col-3">
+                    <input type="checkbox" class="form-check-input" id="colorActive">
+                    <label for="colorActive">Color Active Rays</label>
+                </div>
+                <div class="form-group col-3">
+                    <input type="checkbox" class="form-check-input" id="recordVisibleBlocks">
+                    <label for="recordVisibleBlocks">Record Active/Visible Blocks Stats</label>
+                </div>
+                <div class="form-group col-3">
+                    <input type="checkbox" class="form-check-input" id="enableSpeculation">
+                    <label for="enableSpeculation">Enable Speculation</label>
+                </div>
+                <div class="form-group col-4">
+                    <label for="startSpecCount">Starting Speculation Count</label>
+                    <input type="number" class="form-control-range" id="startSpecCount" value="1" min="1" max="64" step="1">
+                </div>
+                <div class="col-4 row text-left">
+                    <p id="fps"></p>
+                </div>
+                <div class="col-4 row text-left">
+                    <p id="mcInfo"></p>
                 </div>
             </div>
-            <div class="mx-auto col-12 col-lg-8 row">
-                <h4>Description</h4>
-                <p>This is a starter template to get you quickly set up with a development
-                environment for WebGPU! The template uses <a href="https://webpack.js.org/">webpack</a>
-                to manage dependencies and build. Grab the template on
-                <a href="https://github.com/Twinklebear/webgpu-webpack-starter">GitHub</a> and
-                make some cool stuff!</p>
+            <div class="row col-12 col-lg-8 text-left mx-auto mb-2">
+                <p>See the paper for more details (link soon!), or checkout
+                the code on <a href="https://github.com/Twinklebear/webgpu-prog-iso">Github</a>!
+            </div>
+            <div class="row col-12 col-lg-8 text-left mx-auto mb-2">
+                <div class="col-12 row text-left">
+                    <p id="cacheInfo"></p>
+                </div>
+                <div class="col-12 row text-left">
+                    <div class="col-12 text-left">
+                        <p id="totalMemDisplay"></p>
+                    </div>
+                    <div class="col-6 text-left">
+                        <p id="mcMemDisplay"></p>
+                    </div>
+                    <div class="col-6 text-left">
+                        <p id="cacheMemDisplay"></p>
+                    </div>
+                </div>
+                <div class="col-12 text-left">
+                    <p id="camDisplay"></p>
+                </div>
+
+                <button href="javascript:void(0);" id="runRandomBenchmark"
+                    type="button" class="btn btn-primary mr-1">Random Benchmark</button>
+                <button href="javascript:void(0);" id="runSweepUp"
+                    type="button"
+                    class="btn btn-primary mr-1">Sweep Up Benchmark</button>
+                <button href="javascript:void(0);" id="runSweepDown"
+                    type="button"
+                    class="btn btn-primary">Sweep Down Benchmark</button>
+                <button href="javascript:void(0);" id="runRotate"
+                    type="button"
+                    class="btn btn-primary mr-1 mt-1">Rotation Benchmark</button>
+                <button href="javascript:void(0);"
+                    id="recomputeSurface" type="button"
+                    class="btn btn-primary mr-1 mt-1">Recompute Surface (for benchmarking)</button>
+                <button href="javascript:void(0);"
+                    id="saveScreenShotButton" type="button"
+                    class="btn btn-primary mr-1 mt-1">Take Screenshot</button>
             </div>
         </div>
     </div>
+    <canvas id="out-canvas" width="1280" height="720" style="display: none;"></canvas>
 </body>
-</html>
 
+</html>

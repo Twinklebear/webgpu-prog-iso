@@ -1,0 +1,26 @@
+#version 450 core
+
+layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, std140) uniform BlockIDOffset
+{
+    uint id_offset;
+    uint total_visible_blocks;
+};
+
+layout(set = 0, binding = 1, std430) buffer BlockNumRays
+{
+    uint block_num_rays[];
+};
+
+void main(void)
+{
+    const uint block_id = gl_GlobalInvocationID.x + id_offset;
+    if (block_id >= total_visible_blocks) {
+        return;
+    }
+
+    block_num_rays[block_id] = 0;
+}
+
+

@@ -1,0 +1,353 @@
+#version 450 core
+
+#include "util.glsl"
+#include "load_block.comp"
+
+layout(local_size_x = BLOCK_NUM_VOXELS, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 1, binding = 0, std140) uniform ViewParams
+{
+    mat4 proj_view;
+    vec4 eye_pos;
+    vec4 eye_dir;
+    float near_plane;
+    uint current_pass_index;
+};
+
+layout(set = 1, binding = 1, std430) buffer RayInformation
+{
+    RayInfo rays[];
+};
+
+layout(set = 1, binding = 2, std430) buffer RayIDs
+{
+    uint ray_ids[];
+};
+
+layout(set = 1, binding = 3, std430) buffer BlockInformation
+{
+    BlockInfo blocks[];
+};
+
+layout(set = 1, binding = 5, std430) buffer SpeculativeIDs
+{
+    uint spec_ids[];
+};
+
+layout(set = 1, binding = 6, std430) buffer RayRGBZ
+{
+    vec2 ray_rgbz[];
+};
+
+uniform layout(set = 1, binding = 4, rgba8) writeonly image2D render_target;
+
+layout(set = 2, binding = 0, std140) uniform BlockIDOffset
+{
+    uint id_offset;
+    uint total_active_blocks;
+};
+
+shared BlockInfo block_info;
+
+// Compute the polynomial for the cell with the given vertex values
+vec4 compute_polynomial(const vec3 p, const vec3 dir, const vec3 v000, in float values[8]) {
+    const vec3 v111 = v000 + vec3(1);
+    // Note: Grid voxels sizes are 1^3
+    const vec3 a[2] = {v111 - p, p - v000};
+    const vec3 b[2] = {-dir, dir};
+
+    vec4 poly = vec4(0);
+    for (int k = 0; k < 2; ++k) {
+        for (int j = 0; j < 2; ++j) {
+            for (int i = 0; i < 2; ++i) {
+                const float val = values[i + 2 * (j + 2 * k)];
+
+                poly.x += b[i].x * b[j].y * b[k].z * val;
+
+                poly.y += (a[i].x * b[j].y * b[k].z +
+                        b[i].x * a[j].y * b[k].z +
+                        b[i].x * b[j].y * a[k].z) * val;
+
+                poly.z += (b[i].x * a[j].y * a[k].z +
+                        a[i].x * b[j].y * a[k].z +
+                        a[i].x * a[j].y * b[k].z) * val;
+
+                poly.w += a[i].x * a[j].y * a[k].z * val;
+            }
+        }
+    }
+
+    return poly;
+}
+
+float evaluate_polynomial(const vec4 poly, const float t) {
+    return poly.x * pow(t, 3.f) + poly.y * pow(t, 2.f) + poly.z * t + poly.w;
+}
+
+// Returns true if the quadratic has real roots
+bool solve_quadratic(const vec3 poly, out float roots[2]) {
+    // Check for case when poly is just Bt + c = 0
+    if (poly.x == 0) {
+        roots[0] = -poly.z/poly.y;
+        roots[1] = -poly.z/poly.y;
+        return true;
+    }
+    float discriminant = pow(poly.y, 2.f) - 4.f * poly.x * poly.z;
+    if (discriminant < 0.f) {
+        return false;
+    }
+    discriminant = sqrt(discriminant);
+    vec2 r = 0.5f * vec2(-poly.y + discriminant, -poly.y - discriminant) / poly.x;
+    roots[0] = min(r.x, r.y);
+    roots[1] = max(r.x, r.y);
+    return true;
+}
+
+// Trilinear interpolation at the given point within the cell with its origin at v000
+// (origin = bottom-left-near point)
+float trilinear_interpolate_in_cell(const vec3 p, const ivec3 v000, in float values[8]) {
+    const vec3 diff = clamp(p, vec3(v000), vec3(v000) + 1) - v000;
+    // Interpolate across x, then y, then z, and return the value normalized between 0 and 1
+    // WILL note: renamed t0 c00/c11 to match wikipedia notation
+    const float c00 = values[0] * (1.f - diff.x) + values[1] * diff.x;
+    const float c01 = values[4] * (1.f - diff.x) + values[5] * diff.x;
+    const float c10 = values[2] * (1.f - diff.x) + values[3] * diff.x;
+    const float c11 = values[6] * (1.f - diff.x) + values[7] * diff.x;
+    const float c0 = c00 * (1.f - diff.y) + c10 * diff.y;
+    const float c1 = c01 * (1.f - diff.y) + c11 * diff.y;
+    return c0 * (1.f - diff.z) + c1 * diff.z;
+}
+
+vec3 shading(vec3 N, vec3 V, vec3 L, vec3 base_color) {
+    // Just a simple Blinn-Phong model for the paper
+    vec3 H = normalize(V + L);
+    vec3 c = base_color * 0.2;
+    c.rgb += 0.6 * clamp(dot(L, N), 0.f, 1.f) * base_color;
+    c.rgb += 0.1 * pow(clamp(dot(H, N), 0.f, 1.f), 5.f);
+    return c;
+}
+
+vec3 compute_normal(const ivec3 v000, const vec3 hit_p, const in float vertex_values[8]) {
+    vec3 N = vec3(0);
+    const vec3 v111 = v000 + vec3(1);
+    const vec3 a[2] = {v111 - hit_p, hit_p - v000};
+    const float negative_pow[2] = {-1, 1};
+    for (int k = 0; k < 2; ++k) {
+        for (int j = 0; j < 2; ++j) {
+            for (int i = 0; i < 2; ++i) {
+                const float val = vertex_values[i + 2 * (j + 2 * k)];
+                N.x += negative_pow[i] * a[j].y * a[k].z * val;
+                N.y += negative_pow[j] * a[i].x * a[k].z * val;
+                N.z += negative_pow[k] * a[i].x * a[j].y * val;
+            }
+        }
+    }
+    return normalize(N);
+}
+
+bool marmitt_intersect(const in vec3 vol_eye,
+                       const in vec3 grid_ray_dir,
+                       const in vec3 v000,
+                       const in float vertex_values[8],
+                       const float t_prev,
+                       const float t_next,
+                       out float t_hit)
+{
+    if (t_next <= t_prev) {
+        return false;
+    }
+    // The text seems to not say explicitly, but I think it is required to have
+    // the ray "origin" within the cell for the cell-local coordinates for a to
+    // be computed properly. So here I set the cell_p to be at the midpoint of the
+    // ray's overlap with the cell, which makes it easy to compute t_in/t_out and
+    // avoid numerical issues with cell_p being right at the edge of the cell.
+    const vec3 cell_p = vol_eye + grid_ray_dir * (t_prev + (t_next - t_prev) * 0.5f);
+    float t_in = -(t_next - t_prev) * 0.5f * length(grid_ray_dir);
+    float t_out = (t_next - t_prev) * 0.5f * length(grid_ray_dir);
+
+    const vec3 cell_ray_dir = normalize(grid_ray_dir);
+    vec4 poly = compute_polynomial(cell_p, cell_ray_dir, v000, vertex_values);
+    poly.w -= isovalue;
+
+    float f_in = evaluate_polynomial(poly, t_in);
+    float f_out = evaluate_polynomial(poly, t_out);
+    float roots[2] = {0.0, 0.0};
+    // TODO: Seeming to get some holes in the surface with the Marmitt intersector
+    if (solve_quadratic(vec3(3.f * poly.x, 2.f * poly.y, poly.z), roots)) {
+        if (roots[0] >= t_in && roots[0] <= t_out) {
+            float f_root0 = evaluate_polynomial(poly, roots[0]);
+            if (sign(f_root0) == sign(f_in)) {
+                t_in = roots[0];
+                f_in = f_root0;
+            } else {
+                t_out = roots[0];
+                f_out = f_root0;
+            }
+        }
+        if (roots[1] >= t_in && roots[1] <= t_out) {
+            float f_root1 = evaluate_polynomial(poly, roots[1]);
+            if (sign(f_root1) == sign(f_in)) {
+                t_in = roots[1];
+                f_in = f_root1;
+            } else {
+                t_out = roots[1];
+                f_out = f_root1;
+            }
+        }
+    }
+    // If the signs aren't equal we know there's an intersection in the cell
+    if (sign(f_in) != sign(f_out)) {
+        // Find the intersection via repeated linear interpolation
+        for (int i = 0; i < 3; ++i) {
+            float t = t_in + (t_out - t_in) * (-f_in) / (f_out - f_in);
+            float f_t = evaluate_polynomial(poly, t);
+            if (sign(f_t) == sign(f_in)) {
+                t_in = t;
+                f_in = f_t;
+            } else {
+                t_out = t;
+                f_out = f_t;
+            }
+        }
+        const float cell_t_hit = t_in + (t_out - t_in) * (-f_in) / (f_out - f_in);
+        // Return t_hit relative to vol_eye
+        vec3 hit_p = cell_p + cell_ray_dir * cell_t_hit;
+        t_hit = length(hit_p - vol_eye) / length(grid_ray_dir);
+        return true;
+    }
+    return false;
+}
+
+void main(void)
+{
+    // Note: not scale applied to id_offset here, because the 64 threads in each
+    // work group are responsible for the same block
+    // if (gl_WorkGroupID.x + id_offset >= total_active_blocks) {
+    //     return;
+    // }
+
+    if (gl_LocalInvocationID.x == 0) {
+        block_info = blocks[gl_WorkGroupID.x + id_offset];
+    }
+
+    // Note: Barriers must be called from uniform control flow, so can't call these
+    // conditional return statements before calling barrier or load_block.
+    barrier();
+    uvec3 block_dims = load_block(block_info.id);
+    if (gl_WorkGroupID.x + id_offset >= total_active_blocks) {
+        return;
+    }
+    if (block_info.num_rays == 0) { 
+        return;
+    }
+
+    const uvec3 n_blocks = padded_dims.xyz / uvec3(4);
+
+    // Block position in voxels
+    const uvec3 block_pos = block_id_to_pos(block_info.id) * 4;
+
+    // See note on barriers above.
+    // uvec3 block_dims;
+    // if (block_info.lod == 0) {
+        // block_dims = load_block(block_info.id);
+    // } else {
+    //     // Don't load the block data if we're doing LOD
+    //     block_dims = compute_block_dims_with_ghost(block_pos / 4);
+    // }
+
+    vec3 volume_translation = vec3(0) - volume_scale.xyz * 0.5;
+    vec3 transformed_eye = (eye_pos.xyz - volume_translation) / volume_scale.xyz;
+
+    // Transform eye into the volume space, and then the block space 
+    vec3 vol_eye = transformed_eye * volume_dims.xyz - vec3(0.5) - block_pos;
+
+    // Process all the rays for this block in parallel, each thread takes one ray
+    // so we can do 64 rays at a time. For cases where a block projects to a lot more
+    // than 64 pixels it'd be good to break up the rays to be processed by multiple
+    // work groups to avoid serializing rendering. However that might not be a common case
+    // for most large volumes. For the last chunk, threads that don't have a ray to
+    // process just write an invalid texture coordinate, which results in the write
+    // being discarded. However, they have to call imageStore collectively, as it's a
+    // sync point
+    uint chunks = (block_info.num_rays / gl_WorkGroupSize.x);
+    if (block_info.num_rays % gl_WorkGroupSize.x != 0) {
+        ++chunks;
+    }
+
+    for (uint i = 0; i < chunks; ++i) {
+        ivec2 pixel_coords = ivec2(-1);
+        vec4 color = vec4(1);
+        color.a = 1;
+        const uint ray_id = i * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
+
+        if (ray_id < block_info.num_rays) {
+            const uint ray_index = ray_ids[block_info.ray_offset + ray_id];
+            pixel_coords = ivec2(ray_id_to_pos(ray_index));
+            const uint spec_index = spec_ids[block_info.ray_offset + ray_id];
+
+            const vec3 grid_ray_dir = rays[ray_index].ray_dir;
+
+            // Traverse the ray through the dual grid 
+            float vertex_values[8];
+            bool hit_surface = false;
+            vec3 hit_p = vec3(0);
+            float t_hit;
+            vec2 cell_range = vec2(0);
+
+            const vec2 brick_range =
+                intersect_box(vol_eye, grid_ray_dir, vec3(0), vec3(4.0));
+
+            // Make sure we actually intersect this brick, can have some glancing edge cases
+            if (brick_range.y <= brick_range.x) {
+                continue;
+            }
+
+            GridIterator grid_iter =
+                init_grid_iterator(vol_eye,
+                                   grid_ray_dir,
+                                   brick_range.x - 0.001,
+                                   ivec3(block_dims) - 1);
+            ivec3 v000 = ivec3(0);
+            vec2 cell_t_range;
+            while (grid_iterator_get_cell(grid_iter, cell_t_range, v000)) {
+                compute_vertex_values(v000, block_dims, vertex_values, cell_range);
+
+                const bool skip_cell = isovalue < cell_range.x || isovalue > cell_range.y;
+
+                if (!skip_cell) {
+                    hit_surface = marmitt_intersect(vol_eye,
+                            grid_ray_dir, v000, vertex_values, cell_t_range.x, cell_t_range.y, t_hit);
+
+                    if (hit_surface) {
+                        hit_p = vol_eye + grid_ray_dir * t_hit;
+                        break;
+                    }
+                }
+                grid_iterator_advance(grid_iter);
+            }
+
+            if (hit_surface) {
+                // color.xyz = vec3(rays[ray_index].t / (padded_dims.x));
+                // block_ids[ray_index] = UINT_MAX;
+                rays[ray_index].t = FLT_MAX;
+
+                vec3 N = compute_normal(v000, hit_p, vertex_values);
+                vec3 L = normalize(-grid_ray_dir);
+                vec3 V = normalize(-grid_ray_dir);
+                // Make sure normal faces back along ray 
+                if (dot(N, grid_ray_dir) > 0.0) {
+                    N = -N;
+                }
+                const vec3 base_color = vec3(0.3, 0.3, 0.9);
+                // color.xyz = vec3(cell_range.y / 4096.0);
+                // color.xyz = vec3(v000) / block_pos;
+                color.xyz = shading(N, L, V, base_color);
+                // color.xyz = base_color;
+                // Pack the ray color
+                ray_rgbz[spec_index] = vec2(intBitsToFloat(pack_color(color.xyz)), t_hit);
+            }
+            // imageStore(render_target, pixel_coords, color);
+        }
+    }
+}
+

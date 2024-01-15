@@ -1,0 +1,205 @@
+#version 450 core
+
+#include "util.glsl"
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, std140) uniform VolumeParams
+{
+    uvec4 volume_dims;
+    uvec4 padded_dims;
+    vec4 volume_scale;
+    uint max_bits;
+    float isovalue;
+    uint image_width;
+};
+
+layout(set = 0, binding = 1, std140) uniform ViewParams
+{
+    mat4 proj_view;
+    vec4 eye_pos;
+    vec4 eye_dir;
+    float near_plane;
+    uint current_pass_index;
+    uint speculation_count;
+};
+
+layout(set = 0, binding = 2, std430) buffer RayInformation
+{
+    RayInfo rays[];
+};
+
+layout(set = 0, binding = 4, std430) buffer GridIterState
+{
+    // Each ray stores 2 iterator states, the coarse one followed by the fine one.
+    GridIteratorState iterator_state[];
+};
+
+// speculativeRayIDBuffer
+layout(set = 0, binding = 5, std430) buffer RayIDs
+{
+    uint ray_ids[];
+};
+
+// speculativeRayOffsetBuffer
+layout(set = 0, binding = 6, std430) buffer RayOffsets
+{
+    uint ray_offsets[];
+};
+
+layout(set = 0, binding = 7, std430) buffer RayBlockIDs
+{
+    uint block_ids[];
+};
+
+uniform layout(set = 0, binding = 3, rgba8) writeonly image2D render_target;
+
+layout(set = 1, binding = 0, std430) buffer VoxelInformation
+{
+    vec2 voxel_ranges[];
+};
+
+layout(set = 1, binding = 1, std430) buffer CoarseCellRange
+{
+    vec2 coarse_cell_ranges[];
+};
+
+vec4 block_id_to_color(const uvec3 block_id) {
+    const vec3 n_blocks = padded_dims.xyz / uvec3(4);
+    return vec4(vec3(block_id) / n_blocks, 1.0);
+}
+
+void main() {
+    if (gl_GlobalInvocationID.x >= image_width) {
+        return;
+    }
+
+    uint ray_index = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width;
+
+    if (rays[ray_index].t == FLT_MAX) {  
+        return;
+    }
+
+    // Fill speculated ray ID buffer
+    if (speculation_count > 1) {
+        // if (current_pass_index == 0) {
+        //     ray_offsets[ray_index] = ray_index;
+        // }
+        for (int i = 0; i < speculation_count; i++) {
+            ray_ids[ray_offsets[ray_index] * speculation_count + i] = ray_index;
+        }
+    } else {
+        ray_ids[ray_index] = ray_index;
+        ray_offsets[ray_index] = ray_index;
+    }
+
+    const uvec3 n_blocks = padded_dims.xyz / uvec3(4);
+    const ivec3 macrogrid_dims = ivec3(n_blocks);
+
+    // Coarse grid is 1/4 the size of the macrocell grid
+    const ivec3 coarse_grid_dims = ivec3(ceil(vec3(macrogrid_dims) / vec3(4)));
+
+    // Transform the ray into the dual grid space
+    vec3 volume_translation = vec3(0) - volume_scale.xyz * 0.5;
+	vec3 transformed_eye = (eye_pos.xyz - volume_translation) / volume_scale.xyz;
+	const vec3 ray_org = transformed_eye * volume_dims.xyz - vec3(0.5);
+
+    // Compute ray origin and dir on the macrocell grid
+    // Note: ray dir is NOT normalized here, because the t values are relative
+    // to the full volume grid.
+    const vec3 macrocell_grid_org = ray_org * 0.25;
+    const vec3 macrocell_grid_ray_dir = rays[ray_index].ray_dir * 0.25;
+
+    // Compute ray origin and dir on the coarse cell grid
+    const vec3 coarse_grid_org = macrocell_grid_org * 0.25;
+    const vec3 coarse_grid_ray_dir = macrocell_grid_ray_dir * 0.25;
+
+    bool first_coarse_iter = true;
+
+    // Traverse the coarse grid
+    GridIterator coarse_grid_iter;
+    if (current_pass_index == 0) {
+        coarse_grid_iter = init_grid_iterator(coarse_grid_org,
+                coarse_grid_ray_dir, rays[ray_index].t, coarse_grid_dims);
+    } else {
+        coarse_grid_iter = restore_grid_iterator(coarse_grid_org,
+                coarse_grid_ray_dir, coarse_grid_dims, iterator_state[ray_index * 2]);
+    }
+
+    ivec3 coarse_cell_id;
+    vec2 coarse_cell_t_range;
+    uint speculated = 0;
+    while (grid_iterator_get_cell(coarse_grid_iter, coarse_cell_t_range, coarse_cell_id)) {
+        const uint coarse_cell_index = coarse_cell_id.x
+            + coarse_grid_dims.x * (coarse_cell_id.y + coarse_grid_dims.y * coarse_cell_id.z);
+        vec2 coarse_cell_range = coarse_cell_ranges[coarse_cell_index];
+        // Skip all bricks in this coarse cell if we know they won't contain the isovalue
+        if (isovalue < coarse_cell_range.x || isovalue > coarse_cell_range.y) {
+            first_coarse_iter = false;
+            grid_iterator_advance(coarse_grid_iter);
+            continue;
+        }
+
+        const ivec3 coarse_grid_cell_org = coarse_cell_id * 4;
+        const ivec3 macrocell_grid_dims =
+            ivec3(min(coarse_grid_cell_org + vec3(4), macrogrid_dims) - coarse_grid_cell_org);
+        // Traverse the macrocell grid within this coarse grid
+        // We also translate the coarse grid cell to be at the origin for the grid iterator
+        GridIterator grid_iter;
+        if (current_pass_index == 0 || !first_coarse_iter) {
+            grid_iter = init_grid_iterator(macrocell_grid_org - coarse_grid_cell_org,
+                    macrocell_grid_ray_dir, coarse_cell_t_range.x, macrocell_grid_dims);
+        } else {
+            grid_iter = restore_grid_iterator(macrocell_grid_org - coarse_grid_cell_org,
+                    macrocell_grid_ray_dir, macrocell_grid_dims,
+                    iterator_state[ray_index * 2 + 1]);
+            grid_iterator_advance(grid_iter);
+        }
+
+        ivec3 cell_id;
+        vec2 cell_t_range;
+        while (grid_iterator_get_cell(grid_iter, cell_t_range, cell_id)) {
+            // Value range for a block is it's range combined with that of its neighbors to
+            // the positive side 
+            const uint block_index = coarse_grid_cell_org.x + cell_id.x
+                + n_blocks.x * (coarse_grid_cell_org.y + cell_id.y
+                        + n_blocks.y * (coarse_grid_cell_org.z + cell_id.z));
+            const vec2 cell_range = voxel_ranges[block_index];
+
+            if (isovalue >= cell_range.x && isovalue <= cell_range.y) {
+                if (speculation_count == 0) {
+                    return;
+                }
+                block_ids[ray_offsets[ray_index] * speculation_count + speculated] =
+                    block_index;
+                speculated++;
+                
+                // We only save the last iterator state to resume from so we can skip these writes
+                // until we're on the last speculated ray
+                if (speculated == speculation_count) {
+                    // Note: grid dims is redundant and an easy one to not store
+                    //save_grid_iterator(coarse_grid_iter, iterator_state[ray_index * 2]);
+                    //save_grid_iterator(grid_iter, iterator_state[ray_index * 2 + 1]);
+
+                    iterator_state[ray_index * 2].cell_id =
+                        grid_iterator_get_cell_id(coarse_grid_iter);
+                    iterator_state[ray_index * 2].t_max = coarse_grid_iter.t_max;
+                    // Writing it this way seems to result in some invalid code generated
+                    // for the SPV -> WGSL step so it fails to compile
+                    iterator_state[ray_index * 2 + 1].cell_id =
+                        grid_iterator_get_cell_id(grid_iter);
+                    iterator_state[ray_index * 2 + 1].t_max = grid_iter.t_max;
+                    return;
+                }
+            }
+            grid_iterator_advance(grid_iter);
+        }
+        first_coarse_iter = false;
+        grid_iterator_advance(coarse_grid_iter);
+    }
+
+    // If we didn't intersect this ray with as many blocks as we speculate,
+    // then this ray has terminated.
+    rays[ray_index].t = FLT_MAX;
+}
+

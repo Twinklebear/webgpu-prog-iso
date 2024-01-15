@@ -1,0 +1,83 @@
+#version 450 core
+
+#include "util.glsl"
+
+layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, std140) uniform ViewParams
+{
+    mat4 proj_view;
+    vec4 eye_pos;
+    vec4 eye_dir;
+    float near_plane;
+    uint current_pass_index;
+    uint speculation_count;
+};
+
+layout(set = 0, binding = 1, std430) buffer RayIDs
+{
+    uint ray_ids[];
+};
+
+layout(set = 0, binding = 2, std430) buffer RayRGBZ
+{
+    vec2 ray_rgbz[];
+};
+
+uniform layout(set = 0, binding = 3, rgba8) writeonly image2D render_target;
+
+layout(set = 0, binding = 4, std140) uniform VolumeParams
+{
+    uvec4 volume_dims;
+    uvec4 padded_dims;
+    vec4 volume_scale;
+    uint max_bits;
+    float isovalue;
+    uint image_width;
+};
+
+layout(set = 1, binding = 0, std430) buffer RayInformation
+{
+    RayInfo rays[];
+};
+
+void main(void)
+{
+    if (gl_GlobalInvocationID.x >= image_width) {
+        return;
+    }
+    uint ray_index;
+    uint spec_index;
+    if (speculation_count > 1) {
+        spec_index =
+            (gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width) * speculation_count; 
+        ray_index = ray_ids[spec_index];
+    } else {
+        ray_index = gl_GlobalInvocationID.x + gl_GlobalInvocationID.y * image_width;
+        spec_index = ray_index;
+    }
+    ivec2 pixel_coords = ivec2(ray_index % image_width, ray_index / image_width);
+    vec4 color = vec4(0, 0, 0, FLT_MAX);
+    for (int i = 0; i < speculation_count; i++) {
+        if (ray_rgbz[spec_index + i].y < color.w) {
+            // Unpack the ray color
+            color.xyz = unpack_color(floatBitsToInt(ray_rgbz[spec_index + i].x));
+            color.w = ray_rgbz[spec_index + i].y;
+        }
+    }
+    if (color.a != FLT_MAX) {
+#ifdef DRAW_FOG
+        const vec3 volume_translation = vec3(0.f) - volume_scale.xyz * 0.5f;
+        vec3 vol_eye = (eye_pos.xyz - volume_translation) / volume_scale.xyz;
+        vol_eye = vol_eye * volume_dims.xyz - vec3(0.5f);
+        vec2 t_hit =
+            intersect_box(vol_eye, rays[ray_index].ray_dir, vec3(0.f), volume_dims.xyz - 1.f);
+        t_hit.x = max(t_hit.x, 0.f);
+
+        const float fog_start = t_hit.x + 0.1f * length(volume_dims.xyz);
+        float fog = exp(-1.f * max((color.w - fog_start) / (t_hit.y - t_hit.x), 0.f));
+        color.rgb = fog * color.rgb + (1.f - fog) * vec3(1.f);
+#endif
+        imageStore(render_target, pixel_coords, vec4(color.rgb, 1.f));
+    }
+}
