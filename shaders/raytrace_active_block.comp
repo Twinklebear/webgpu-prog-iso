@@ -81,7 +81,7 @@ vec4 compute_polynomial(const vec3 p, const vec3 dir, const vec3 v000, in float 
 }
 
 float evaluate_polynomial(const vec4 poly, const float t) {
-    return poly.x * pow(t, 3.f) + poly.y * pow(t, 2.f) + poly.z * t + poly.w;
+    return poly.x * t * t * t + poly.y * t * t + poly.z * t + poly.w;
 }
 
 // Returns true if the quadratic has real roots

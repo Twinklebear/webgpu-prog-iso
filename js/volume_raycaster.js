@@ -924,7 +924,7 @@ VolumeRaycaster.prototype.setCompressedVolume =
     this.volumeInfoBuffer.unmap();
 
     var compressedBuffer = this.device.createBuffer({
-        size: volume.byteLength,
+        size: alignTo(volume.byteLength, 4),
         usage: GPUBufferUsage.STORAGE,
         mappedAtCreation: true,
     });

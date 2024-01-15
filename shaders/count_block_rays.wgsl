@@ -5,12 +5,12 @@
 const UINT_MAX: u32 = 0xffffffffu;
 const FLT_MAX: f32 = 3.402823466e+38;
 
-type float2 = vec2<f32>;
-type float3 = vec3<f32>;
-type float4 = vec4<f32>;
-type uint2 = vec2<u32>;
-type uint3 = vec3<u32>;
-type uint4 = vec4<u32>;
+alias float2 = vec2<f32>;
+alias float3 = vec3<f32>;
+alias float4 = vec4<f32>;
+alias uint2 = vec2<u32>;
+alias uint3 = vec3<u32>;
+alias uint4 = vec4<u32>;
 
 struct VolumeParams {
   volume_dims: uint4,
