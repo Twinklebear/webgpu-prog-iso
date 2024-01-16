@@ -5,6 +5,7 @@ import { Controller, ArcballCamera } from "./webgl-util";
 import { display_render_frag_spv, display_render_vert_spv } from "./embedded_shaders";
 import { vec3, mat4 } from "gl-matrix";
 import { saveAs } from 'file-saver';
+import * as ort from 'onnxruntime-web';
 
 (async () => {
     function runBenchmark(benchmark)
@@ -59,6 +60,8 @@ import { saveAs } from 'file-saver';
         },
     };
     var device = await adapter.requestDevice(gpuDeviceDesc);
+
+    const session = await ort.InferenceSession.create('./6597af78.onnx', { executionProviders: ['wasm'], graphOptimizationLevel: 'all' }); 
 
     var canvas = document.getElementById("webgpu-canvas");
     var context = canvas.getContext("webgpu");

@@ -81,7 +81,7 @@ vec4 compute_polynomial(const vec3 p, const vec3 dir, const vec3 v000, in float 
 }
 
 float evaluate_polynomial(const vec4 poly, const float t) {
-    return poly.x * pow(t, 3.f) + poly.y * pow(t, 2.f) + poly.z * t + poly.w;
+    return poly.x * t * t * t + poly.y * t * t + poly.z * t + poly.w;
 }
 
 // Returns true if the quadratic has real roots
@@ -92,7 +92,7 @@ bool solve_quadratic(const vec3 poly, out float roots[2]) {
         roots[1] = -poly.z/poly.y;
         return true;
     }
-    float discriminant = pow(poly.y, 2.f) - 4.f * poly.x * poly.z;
+    float discriminant = poly.y * poly.y - 4.f * poly.x * poly.z;
     if (discriminant < 0.f) {
         return false;
     }
@@ -123,7 +123,8 @@ vec3 shading(vec3 N, vec3 V, vec3 L, vec3 base_color) {
     vec3 H = normalize(V + L);
     vec3 c = base_color * 0.2;
     c.rgb += 0.6 * clamp(dot(L, N), 0.f, 1.f) * base_color;
-    c.rgb += 0.1 * pow(clamp(dot(H, N), 0.f, 1.f), 5.f);
+    const float temp = clamp(dot(H, N), 0.f, 1.f);
+    c.rgb += 0.1 * temp * temp * temp * temp * temp;
     return c;
 }
 
