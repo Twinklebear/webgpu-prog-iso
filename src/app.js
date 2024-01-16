@@ -5,7 +5,8 @@ import { Controller, ArcballCamera } from "./webgl-util";
 import { display_render_frag_spv, display_render_vert_spv } from "./embedded_shaders";
 import { vec3, mat4 } from "gl-matrix";
 import { saveAs } from 'file-saver';
-import * as ort from 'onnxruntime-web';
+import { imageDataToTensor, getImageTensorFromPath, runModel } from "./inference";
+import { InferenceSession } from "onnxruntime-web/webgpu";
 
 (async () => {
     function runBenchmark(benchmark)
@@ -61,7 +62,7 @@ import * as ort from 'onnxruntime-web';
     };
     var device = await adapter.requestDevice(gpuDeviceDesc);
 
-    const session = await ort.InferenceSession.create('./6597af78.onnx', { executionProviders: ['wasm'], graphOptimizationLevel: 'all' }); 
+    var session = await InferenceSession.create('./big.onnx', { executionProviders: ['webgpu'], graphOptimizationLevel: 'all'});
 
     var canvas = document.getElementById("webgpu-canvas");
     var context = canvas.getContext("webgpu");
@@ -488,6 +489,23 @@ import * as ort from 'onnxruntime-web';
                         imageBuffer,
                         document.getElementById('out-canvas'));
                 }
+            }
+            if (document.getElementById("infer").checked && volumeRC.numPasses == 1) {
+                var outCanvas = document.getElementById("out-canvas");
+                var commandEncoder = device.createCommandEncoder();
+                commandEncoder.copyTextureToBuffer({texture: volumeRC.renderTarget},
+                                                {buffer: imageBuffer, bytesPerRow: outCanvas.width * 4},
+                                                [outCanvas.width, outCanvas.height, 1]);
+                device.queue.submit([commandEncoder.finish()]);
+                await device.queue.onSubmittedWorkDone();
+        
+                await imageBuffer.mapAsync(GPUMapMode.READ);
+                var imageReadbackArray = new Uint8ClampedArray(imageBuffer.getMappedRange());
+                var inputTensor = imageDataToTensor(imageReadbackArray, [1, 3, 1280, 720]);
+                // var inputTensor = await getImageTensorFromPath("./big.png", [1, 3, 1280, 720]);
+                console.log(inputTensor);
+                runModel(session, inputTensor);
+                imageBuffer.unmap();
             }
         }
         if (saveScreenshot) {
