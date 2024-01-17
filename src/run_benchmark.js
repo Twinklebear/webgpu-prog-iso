@@ -1,7 +1,7 @@
 import { vec3 } from "gl-matrix";
 const benchmarkIterations = 100;
 const cameraIterations = 10;
-const rotateIterations = 16;
+const rotateIterations = 10;
 
 export var RandomIsovalueBenchmark = function(isovalueSlider, range) {
     this.name = "random";
