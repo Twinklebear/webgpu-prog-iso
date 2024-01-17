@@ -127,12 +127,17 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
     var width = canvas.width * resolutionToDivisor[resolution.value];
     var height = canvas.height * resolutionToDivisor[resolution.value];
     
-    var session = await InferenceSession.create(`./noof${width}.onnx`, 
-        { executionProviders: ['webgpu'], graphOptimizationLevel: 'all'});
-    console.log(session);
-    var imageReadbackArray = new Uint8ClampedArray(width * height);
-    var inputTensor = imageDataToTensor(imageReadbackArray, [1, 3, width, height]);
-    await runInference(session, inputTensor, width);
+    var session;
+    try { 
+        session = await InferenceSession.create(`./noof${width}.onnx`, 
+            { executionProviders: ['webgpu'], graphOptimizationLevel: 'all'});
+        console.log(session);
+        var imageReadbackArray = new Uint8ClampedArray(width * height);
+        var inputTensor = imageDataToTensor(imageReadbackArray, [1, 3, width, height]);
+        await runInference(session, inputTensor, width);
+    } catch (e) {
+        console.log(e);
+    }
 
     var headstartSlider = document.getElementById("startSpecCount");
     var volumeRC =
@@ -553,7 +558,8 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
             }
             if (surfaceDone) {
                 perfStats.push(
-                    {"isovalue": currentIsovalue, "stats": volumeRC.surfacePerfStats, "inferenceTime": inferenceTime});
+                    {
+                        "isovalue": currentIsovalue, "stats": volumeRC.surfacePerfStats, "inferenceTime": inferenceTime});
             }
 
         }
