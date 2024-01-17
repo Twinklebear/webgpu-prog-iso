@@ -1759,6 +1759,8 @@ VolumeRaycaster.prototype.renderSurface = async function(
     //}
     this.renderComplete = numRaysActive == 0;
     var imageCompleteness = (this.width * this.height - numRaysActive) / (this.width * this.height);
+    this.passPerfStats["imageCompleteness"] = imageCompleteness;
+    this.passPerfStats["imageCompletenessThreshold"] = parseFloat(document.getElementById("completenessThreshold").value);
     if ( imageCompleteness >= parseFloat(document.getElementById("completenessThreshold").value)) { 
         console.log(`Render complete with image completeness: ${imageCompleteness}`)
         this.renderComplete = true;        
