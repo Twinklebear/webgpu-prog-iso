@@ -3,57 +3,8 @@ import {Tensor, InferenceSession} from "onnxruntime-web/webgpu";
 // import * as ort from "onnxruntime-web"; 
 var recurrentState = false;
 
-export async function runModel(session, preprocessedData, width, height) {
-  // Run inference and get results.
-  var [results, inferenceTime] =  await runInference(session, preprocessedData, width);
-  console.log("inference time", inferenceTime);
-  console.log("results", results);
-//   const dataFromImage = ndarray(new Float32Array(width * height * 4), [
-//     width,
-//     height,
-//     4,
-//   ]);
-//   const dataProcessed = ndarray(new Float32Array(results), [
-//     1,
-//     3,
-//     width,
-//     height,
-//   ]);
-//   ops.assign(
-//     dataFromImage.pick(null, null, 0),
-//     dataProcessed.pick(0, 0, null, null)
-//   );
-//   ops.assign(
-//     dataFromImage.pick(null, null, 1),
-//     dataProcessed.pick(0, 1, null, null)
-//   );
-//   ops.assign(
-//     dataFromImage.pick(null, null, 2),
-//     dataProcessed.pick(0, 2, null, null)
-//   );
-//   let dataForImage = dataFromImage.data;
-//   for (let y = 0; y < height; y++) {
-//     for (let x = 0; x < width; x++) {
-//       let pos = (y * width + x) * 4; // position in buffer based on x and y
-//       dataForImage[pos] *= 255;
-//       dataForImage[pos + 1] *= 255;
-//       dataForImage[pos + 2] *= 255;
-//       dataForImage[pos + 3] = 255; // set alpha channel
-//     }
-//   }
-//   let canvas = document.getElementById("test-canvas");
-
-//   let ctx = canvas.getContext("2d");
-
-//   // create imageData object
-//   let idata = ctx.createImageData(width, height);
-
-//   // set our buffer as source
-//   idata.data.set(dataForImage);
-//   // update canvas with new data
-//   ctx.putImageData(idata, 0, 0);
-//   console.log(dataForImage);
-//   return [results, inferenceTime];
+export function cleanRecurrentState() {
+    recurrentState = false;
 }
 
 export async function runInference(session, preprocessedData, width) {

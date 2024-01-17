@@ -5,10 +5,8 @@ import { Controller, ArcballCamera } from "./webgl-util";
 import { display_render_frag_spv, display_render_vert_spv } from "./embedded_shaders";
 import { vec3, mat4 } from "gl-matrix";
 import { saveAs } from 'file-saver';
-import { imageDataToTensor, runInference, getImageTensorFromPath } from "./inference";
+import { imageDataToTensor, runInference, getImageTensorFromPath, cleanRecurrentState } from "./inference";
 import { InferenceSession } from "onnxruntime-web/webgpu";
-import ndarray from "ndarray";
-import ops from "ndarray-ops";
 
 (async () => {
     function runBenchmark(benchmark)
@@ -63,10 +61,6 @@ import ops from "ndarray-ops";
         },
     };
     var device = await adapter.requestDevice(gpuDeviceDesc);
-
-    var session = await InferenceSession.create('./noof1024.onnx', { executionProviders: ['webgpu'], graphOptimizationLevel: 'all'});
-    console.log(session);
-
     var canvas = document.getElementById("webgpu-canvas");
     var context = canvas.getContext("webgpu");
 
@@ -129,18 +123,26 @@ import ops from "ndarray-ops";
 
     var recordVisibleBlocksUI = document.getElementById("recordVisibleBlocks")
     var resolution = document.getElementById("resolution");
-    var resolutionToDivisor = {"full": 1, "half": 2, "quarter": 4};
-    var width = canvas.width / resolutionToDivisor[resolution.value];
-    var height = canvas.height / resolutionToDivisor[resolution.value];
+    var resolutionToDivisor = {"full": 1, "threefourths": 0.75, "half": 0.5, "quarter": 0.25};
+    var width = canvas.width * resolutionToDivisor[resolution.value];
+    var height = canvas.height * resolutionToDivisor[resolution.value];
+    
+    var session = await InferenceSession.create(`./noof${width}.onnx`, 
+        { executionProviders: ['webgpu'], graphOptimizationLevel: 'all'});
+    console.log(session);
+    var imageReadbackArray = new Uint8ClampedArray(width * height);
+    var inputTensor = imageDataToTensor(imageReadbackArray, [1, 3, width, height]);
+    await runInference(session, inputTensor, width);
 
     var headstartSlider = document.getElementById("startSpecCount");
     var volumeRC =
         new VolumeRaycaster(device, width, height, recordVisibleBlocksUI, enableSpeculationUI, parseInt(headstartSlider.value));
 
     resolution.onchange = async () => {
-        var width = canvas.width / resolutionToDivisor[resolution.value];
-        var height = canvas.height / resolutionToDivisor[resolution.value];
+        width = canvas.width * resolutionToDivisor[resolution.value];
+        height = canvas.height * resolutionToDivisor[resolution.value];
         console.log(`Changed resolution to ${width}x${height}`);
+
         volumeRC = new VolumeRaycaster(
             device, width, height, recordVisibleBlocksUI, enableSpeculationUI, parseInt(headstartSlider.value));
         await volumeRC.setCompressedVolume(
@@ -154,10 +156,20 @@ import ops from "ndarray-ops";
                 {binding: 2, resource: sampler}
             ]
         });
+        imageBuffer = device.createBuffer({
+            size: width * height * 4,
+            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+        });
+
+        session = await InferenceSession.create(`./noof${width}.onnx`, 
+            { executionProviders: ['webgpu'], graphOptimizationLevel: 'all'});
+        console.log(session);
+        cleanRecurrentState();
+        var imageReadbackArray = new Uint8ClampedArray(width * height);
+        var inputTensor = imageDataToTensor(imageReadbackArray, [1, 3, width, height]);
+        await runInference(session, inputTensor, width);
     };
     headstartSlider.onchange = async () => {
-        var width = canvas.width / resolutionToDivisor[resolution.value];
-        var height = canvas.height / resolutionToDivisor[resolution.value];
         volumeRC = new VolumeRaycaster(
             device, width, height, recordVisibleBlocksUI, enableSpeculationUI, parseInt(headstartSlider.value));
         await volumeRC.setCompressedVolume(
@@ -453,11 +465,6 @@ import ops from "ndarray-ops";
                 currentIsovalue, 1, upload, recomputeSurface, eyePos, eyeDir, upDir);
             var end = performance.now();
 
-            if (surfaceDone) {
-                perfStats.push(
-                    {"isovalue": currentIsovalue, "stats": volumeRC.surfacePerfStats});
-            }
-
             averageComputeTime =
                 Math.round(volumeRC.totalPassTime / volumeRC.numPasses);
             recomputeSurface = false;
@@ -495,44 +502,60 @@ import ops from "ndarray-ops";
                 }
             }
             if (document.getElementById("infer").checked && surfaceDone) {
-                var outCanvas = document.getElementById("webgpu-canvas");
                 var commandEncoder = device.createCommandEncoder();
                 commandEncoder.copyTextureToBuffer({texture: volumeRC.renderTarget},
-                                                {buffer: imageBuffer, bytesPerRow: outCanvas.width * 4},
-                                                [outCanvas.width, outCanvas.height, 1]);
+                                                {buffer: imageBuffer, bytesPerRow: width * 4},
+                                                [width, height, 1]);
                 device.queue.submit([commandEncoder.finish()]);
                 await device.queue.onSubmittedWorkDone();
         
                 await imageBuffer.mapAsync(GPUMapMode.READ);
                 var imageReadbackArray = new Uint8ClampedArray(imageBuffer.getMappedRange());
-                var inputTensor = imageDataToTensor(imageReadbackArray, [1, 3, canvas.width, canvas.height]);
+                var inputTensor = imageDataToTensor(imageReadbackArray, [1, 3, width, height]);
                 imageBuffer.unmap();
-                var [results, inferenceTime] = await runInference(session, inputTensor, canvas.width);
+                var [results, inferenceTime] = await runInference(session, inputTensor, width);
+                // console.log("results", results);
                 console.log("inference time", inferenceTime);
-                var textureData = new Uint8ClampedArray(results.length + canvas.width * canvas.height);
-                var start = new Date();
-                for (var i = 0; i < canvas.width * canvas.height; i++) {
-                    textureData[i * 4] = 255 * results[i], 1;
-                    textureData[i * 4 + 1] = 255 * results[i + canvas.width * canvas.height], 1;
-                    textureData[i * 4 + 2] = 255 * results[i + 2 * canvas.width * canvas.height];
-                    textureData[i * 4 + 3] = 255;
-                }
+                var textureData = new Uint8ClampedArray(results.length + width * height);
+                // var min = 32767, max = 0;
+                // for (var i = 0; i < results.length; i++) {
+                //     if (results[i] < min) {
+                //         min = results[i];
+                //     }
+                //     if (results[i] > max) {
+                //         max = results[i]
+                //     }
+                // }
+                // console.log("min", min);
+                // console.log("max", max);
                 // let testCanvas = document.getElementById("test-canvas");
                 // let ctx = testCanvas.getContext("2d");
                 // let idata = ctx.createImageData(canvas.width, canvas.height);
                 // idata.data.set(textureData);
                 // ctx.putImageData(idata, 0, 0);
 
+                var start = new Date();
+                for (var i = 0; i < width * height; i++) {
+                    textureData[i * 4] = results[i] * 255;
+                    textureData[i * 4 + 1] = results[i + width * height] * 255;
+                    textureData[i * 4 + 2] = results[i + 2 * width * height] * 255;
+                    textureData[i * 4 + 3] = 255;
+                }
                 device.queue.writeTexture(
                     { texture: volumeRC.renderTarget }, 
                     textureData, 
-                    { bytesPerRow: outCanvas.width * 4 }, 
-                    { width: outCanvas.width, height: outCanvas.height}
+                    { bytesPerRow: width * 4 }, 
+                    { width: width, height: height}
                 );
                 await device.queue.onSubmittedWorkDone();
                 var end = new Date();
                 console.log("Texture write time", Math.round(end - start))
             }
+            if (surfaceDone) {
+                perfStats.push(
+                    {"isovalue": currentIsovalue, "stats": volumeRC.surfacePerfStats, "inferenceTime": inferenceTime});
+            }
+
         }
         if (saveScreenshot) {
             saveScreenshot = false;

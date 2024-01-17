@@ -1,5 +1,5 @@
 import { vec3 } from "gl-matrix";
-const benchmarkIterations = 250;
+const benchmarkIterations = 100;
 const cameraIterations = 10;
 const rotateIterations = 16;
 

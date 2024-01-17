@@ -26,6 +26,7 @@
                 <div class="form-group col-4">
                     <select name="resolution" id="resolution">
                         <option value="full">Full</option>
+                        <option value="threefourths">Three Fourths</option>
                         <option value="half">Half</option>
                         <option value="quarter">Quarter</option>
                       </select>
@@ -44,10 +45,6 @@
                     <label for="colorActive">Color Active Rays</label>
                 </div>
                 <div class="form-group col-3">
-                    <input type="checkbox" class="form-check-input" id="infer">
-                    <label for="infer">Infer Completion</label>
-                </div>
-                <div class="form-group col-3">
                     <input type="checkbox" class="form-check-input" id="recordVisibleBlocks">
                     <label for="recordVisibleBlocks">Record Active/Visible Blocks Stats</label>
                 </div>
@@ -55,11 +52,15 @@
                     <input type="checkbox" class="form-check-input" id="enableSpeculation">
                     <label for="enableSpeculation">Enable Speculation</label>
                 </div>
-                <div class="form-group col-4">
+                <div class="form-group col-3">
                     <label for="startSpecCount">Starting Speculation Count</label>
                     <input type="number" class="form-control-range" id="startSpecCount" value="1" min="1" max="64" step="1">
                 </div>
-                <div class="form-group col-4">
+                <div class="form-group col-3">
+                    <input type="checkbox" class="form-check-input" id="infer">
+                    <label for="infer">Infer Completion</label>
+                </div>
+                <div class="form-group col-3">
                     <label for="completenessThreshold">Image Completeness Threshold</label>
                     <input type="number" class="form-control-range" id="completenessThreshold" value="1" min="0" max="1" step="0.1">
                 </div>
@@ -114,7 +115,7 @@
         </div>
     </div>
     <img id="image">
-    <canvas id="out-canvas" width="1280" height="720" style="display: none;"></canvas>
+    <canvas id="out-canvas" width="1024" height="1024" style="display: none;"></canvas>
 </body>
 
 </html>
