@@ -1,83 +1,91 @@
 import 'jimp';
-import ndarray from "ndarray";
-import ops from "ndarray-ops";
 import {Tensor, InferenceSession} from "onnxruntime-web/webgpu";
 // import * as ort from "onnxruntime-web"; 
+var recurrentState = false;
 
-export async function runModel(session, preprocessedData) {
-  console.log(session);
+export async function runModel(session, preprocessedData, width, height) {
   // Run inference and get results.
-  var [results, inferenceTime] =  await runInference(session, preprocessedData);
+  var [results, inferenceTime] =  await runInference(session, preprocessedData, width);
   console.log("inference time", inferenceTime);
-  const dataFromImage = ndarray(new Float32Array(1280 * 720 * 4), [
-    1280,
-    720,
-    4,
-  ]);
-  const dataProcessed = ndarray(new Float32Array(results), [
-    1,
-    3,
-    1280,
-    720,
-  ]);
-  ops.assign(
-    dataFromImage.pick(null, null, 0),
-    dataProcessed.pick(0, 0, null, null)
-  );
-  ops.assign(
-    dataFromImage.pick(null, null, 1),
-    dataProcessed.pick(0, 1, null, null)
-  );
-  ops.assign(
-    dataFromImage.pick(null, null, 2),
-    dataProcessed.pick(0, 2, null, null)
-  );
-  let dataForImage = dataFromImage.data;
-  for (let y = 0; y < 720; y++) {
-    for (let x = 0; x < 1280; x++) {
-      let pos = (y * 1280 + x) * 4; // position in buffer based on x and y
-      dataForImage[pos] *= 255;
-      dataForImage[pos + 1] *= 255;
-      dataForImage[pos + 2] *= 255;
-      dataForImage[pos + 3] = 255; // set alpha channel
-    }
-  }
-  let canvas = document.getElementById("test-canvas");
+  console.log("results", results);
+//   const dataFromImage = ndarray(new Float32Array(width * height * 4), [
+//     width,
+//     height,
+//     4,
+//   ]);
+//   const dataProcessed = ndarray(new Float32Array(results), [
+//     1,
+//     3,
+//     width,
+//     height,
+//   ]);
+//   ops.assign(
+//     dataFromImage.pick(null, null, 0),
+//     dataProcessed.pick(0, 0, null, null)
+//   );
+//   ops.assign(
+//     dataFromImage.pick(null, null, 1),
+//     dataProcessed.pick(0, 1, null, null)
+//   );
+//   ops.assign(
+//     dataFromImage.pick(null, null, 2),
+//     dataProcessed.pick(0, 2, null, null)
+//   );
+//   let dataForImage = dataFromImage.data;
+//   for (let y = 0; y < height; y++) {
+//     for (let x = 0; x < width; x++) {
+//       let pos = (y * width + x) * 4; // position in buffer based on x and y
+//       dataForImage[pos] *= 255;
+//       dataForImage[pos + 1] *= 255;
+//       dataForImage[pos + 2] *= 255;
+//       dataForImage[pos + 3] = 255; // set alpha channel
+//     }
+//   }
+//   let canvas = document.getElementById("test-canvas");
 
-  let ctx = canvas.getContext("2d");
+//   let ctx = canvas.getContext("2d");
 
-  // create imageData object
-  let idata = ctx.createImageData(1280, 720);
+//   // create imageData object
+//   let idata = ctx.createImageData(width, height);
 
-  // set our buffer as source
-  idata.data.set(dataForImage);
-  // update canvas with new data
-  ctx.putImageData(idata, 0, 0);
+//   // set our buffer as source
+//   idata.data.set(dataForImage);
+//   // update canvas with new data
+//   ctx.putImageData(idata, 0, 0);
 //   console.log(dataForImage);
 //   return [results, inferenceTime];
 }
 
-async function runInference(session, preprocessedData) {
-  // Get start time to calculate inference time.
-  const start = new Date();
-  // create feeds with the input name from model export and the preprocessed data.
-  const feeds = {};
-  feeds[session.inputNames[0]] = preprocessedData;
-//   for (var i = 1; i < session.inputNames.length; i++) {
-//     feeds[session.inputNames[i]] = new Tensor("float32", []);
-//   }
+export async function runInference(session, preprocessedData, width) {
+    // Get start time to calculate inference time.
+    // create feeds with the input name from model export and the preprocessed data.
+    const feeds = {};
+    const architecture = [32, 64, 64, 80];
+    feeds[session.inputNames[0]] = preprocessedData;
+    for (var i = 0; i < session.inputNames.length - 1; i++) {
+        if (recurrentState) {
+            feeds[session.inputNames[i + 1]] = recurrentState[i];
+        } else {
+            var dim = width / 2**i;
+            feeds[session.inputNames[session.inputNames.length - i - 1]] = new Tensor("float32", 
+                new Float32Array(architecture[i] * dim * dim), 
+                [1, architecture[i], dim, dim]
+            );
+        }
+    }
+    const start = new Date();  
+    const outputData = await session.run(feeds);
+    const results = outputData[session.outputNames[0]].data;
+    recurrentState = [
+        outputData[session.outputNames[3]],
+        outputData[session.outputNames[4]],
+        outputData[session.outputNames[5]],
+        outputData[session.outputNames[6]]
+    ];
+    const end = new Date();
+    const inferenceTime = Math.round(end.getTime() - start.getTime());
   
-  // Run the session inference.
-  const outputData = await session.run(feeds);
-  console.log(outputData);
-  const results = outputData[session.outputNames[0]].data;
-  // Get the end time to calculate inference time.
-  const end = new Date();
-  // Convert to seconds.
-  const inferenceTime = (end.getTime() - start.getTime())/1000;
-  // Get output results with the output name from the model export.
-  
-  return [results, inferenceTime];
+    return [results, inferenceTime];
 }
 
 export async function getImageTensorFromPath(path, dims) {

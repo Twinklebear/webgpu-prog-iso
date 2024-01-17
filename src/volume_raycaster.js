@@ -305,7 +305,7 @@ export var VolumeRaycaster = function(
         size: [this.width, this.height, 1],
         format: renderTargetFormat,
         usage: GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.TEXTURE_BINDING |
-                   GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC
+                   GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST
     });
     this.renderTargetCopy = this.device.createTexture({
         size: [this.width, this.height, 1],
@@ -1746,6 +1746,7 @@ VolumeRaycaster.prototype.renderSurface = async function(
         }
     } else {
         this.passPerfStats["nRaysActive"] = numRaysActive;
+        this.passPerfStats["endPassRaysActive"] = numRaysActive;
     }
     var endPass = performance.now();
     this.passPerfStats["totalPassTime_ms"] = endPass - startPass;
@@ -1757,7 +1758,11 @@ VolumeRaycaster.prototype.renderSurface = async function(
     this.numPasses += 1;
     //}
     this.renderComplete = numRaysActive == 0;
-    // this.renderComplete = true;
+    var imageCompleteness = (this.width * this.height - numRaysActive) / (this.width * this.height);
+    if ( imageCompleteness >= parseFloat(document.getElementById("completenessThreshold").value)) { 
+        console.log(`Render complete with image completeness: ${imageCompleteness}`)
+        this.renderComplete = true;        
+    }
     if (this.renderComplete) {
         if (this.recordVisibleBlocks) {
             var nTotalBlocksActive = 0;

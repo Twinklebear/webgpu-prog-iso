@@ -16,10 +16,8 @@
         <div class="row">
             <div class="col-12 text-center">
                 <h4>WebGPU Speculative Progressive Isosurface Raycaster</h4>
-                <canvas id="webgpu-canvas" class="img-fluid" width="1280" height="720"></canvas>
+                <canvas id="webgpu-canvas" class="img-fluid" width="1024" height="1024"></canvas>
             </div>
-            <img id="image">
-            <canvas id="test-canvas" class="img-fluid" width="1280" height="720"></canvas>
             <div class="col-12 col-lg-8 mx-auto row">
                 <div class="form-group col-8">
                     <label for="isovalue">Isovalue</label>
@@ -42,11 +40,11 @@
                     <label for="outputImages">Output Images</label>
                 </div>
                 <div class="form-group col-3">
-                    <input type="checkbox" class="form-check-input" id="colorActive">
+                    <input type="checkbox" checked class="form-check-input" id="colorActive">
                     <label for="colorActive">Color Active Rays</label>
                 </div>
                 <div class="form-group col-3">
-                    <input type="checkbox" checked class="form-check-input" id="infer">
+                    <input type="checkbox" class="form-check-input" id="infer">
                     <label for="infer">Infer Completion</label>
                 </div>
                 <div class="form-group col-3">
@@ -60,6 +58,10 @@
                 <div class="form-group col-4">
                     <label for="startSpecCount">Starting Speculation Count</label>
                     <input type="number" class="form-control-range" id="startSpecCount" value="1" min="1" max="64" step="1">
+                </div>
+                <div class="form-group col-4">
+                    <label for="completenessThreshold">Image Completeness Threshold</label>
+                    <input type="number" class="form-control-range" id="completenessThreshold" value="1" min="0" max="1" step="0.1">
                 </div>
                 <div class="col-4 row text-left">
                     <p id="fps"></p>
@@ -111,6 +113,7 @@
             </div>
         </div>
     </div>
+    <img id="image">
     <canvas id="out-canvas" width="1280" height="720" style="display: none;"></canvas>
 </body>
 

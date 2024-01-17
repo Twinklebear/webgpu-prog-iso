@@ -5,8 +5,10 @@ import { Controller, ArcballCamera } from "./webgl-util";
 import { display_render_frag_spv, display_render_vert_spv } from "./embedded_shaders";
 import { vec3, mat4 } from "gl-matrix";
 import { saveAs } from 'file-saver';
-import { imageDataToTensor, getImageTensorFromPath, runModel } from "./inference";
+import { imageDataToTensor, runInference, getImageTensorFromPath } from "./inference";
 import { InferenceSession } from "onnxruntime-web/webgpu";
+import ndarray from "ndarray";
+import ops from "ndarray-ops";
 
 (async () => {
     function runBenchmark(benchmark)
@@ -62,7 +64,8 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
     };
     var device = await adapter.requestDevice(gpuDeviceDesc);
 
-    var session = await InferenceSession.create('./big.onnx', { executionProviders: ['webgpu'], graphOptimizationLevel: 'all'});
+    var session = await InferenceSession.create('./noof1024.onnx', { executionProviders: ['webgpu'], graphOptimizationLevel: 'all'});
+    console.log(session);
 
     var canvas = document.getElementById("webgpu-canvas");
     var context = canvas.getContext("webgpu");
@@ -440,6 +443,7 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
         }
 
         if (recomputeSurface || !surfaceDone) {
+            var inferenceTime = false;
             var eyePos = camera.eyePos();
             var eyeDir = camera.eyeDir();
             var upDir = camera.upDir();
@@ -490,8 +494,8 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
                         document.getElementById('out-canvas'));
                 }
             }
-            if (document.getElementById("infer").checked && volumeRC.numPasses == 1) {
-                var outCanvas = document.getElementById("out-canvas");
+            if (document.getElementById("infer").checked && surfaceDone) {
+                var outCanvas = document.getElementById("webgpu-canvas");
                 var commandEncoder = device.createCommandEncoder();
                 commandEncoder.copyTextureToBuffer({texture: volumeRC.renderTarget},
                                                 {buffer: imageBuffer, bytesPerRow: outCanvas.width * 4},
@@ -501,11 +505,33 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
         
                 await imageBuffer.mapAsync(GPUMapMode.READ);
                 var imageReadbackArray = new Uint8ClampedArray(imageBuffer.getMappedRange());
-                var inputTensor = imageDataToTensor(imageReadbackArray, [1, 3, 1280, 720]);
-                // var inputTensor = await getImageTensorFromPath("./big.png", [1, 3, 1280, 720]);
-                console.log(inputTensor);
-                runModel(session, inputTensor);
+                var inputTensor = imageDataToTensor(imageReadbackArray, [1, 3, canvas.width, canvas.height]);
                 imageBuffer.unmap();
+                var [results, inferenceTime] = await runInference(session, inputTensor, canvas.width);
+                console.log("inference time", inferenceTime);
+                var textureData = new Uint8ClampedArray(results.length + canvas.width * canvas.height);
+                var start = new Date();
+                for (var i = 0; i < canvas.width * canvas.height; i++) {
+                    textureData[i * 4] = 255 * results[i], 1;
+                    textureData[i * 4 + 1] = 255 * results[i + canvas.width * canvas.height], 1;
+                    textureData[i * 4 + 2] = 255 * results[i + 2 * canvas.width * canvas.height];
+                    textureData[i * 4 + 3] = 255;
+                }
+                // let testCanvas = document.getElementById("test-canvas");
+                // let ctx = testCanvas.getContext("2d");
+                // let idata = ctx.createImageData(canvas.width, canvas.height);
+                // idata.data.set(textureData);
+                // ctx.putImageData(idata, 0, 0);
+
+                device.queue.writeTexture(
+                    { texture: volumeRC.renderTarget }, 
+                    textureData, 
+                    { bytesPerRow: outCanvas.width * 4 }, 
+                    { width: outCanvas.width, height: outCanvas.height}
+                );
+                await device.queue.onSubmittedWorkDone();
+                var end = new Date();
+                console.log("Texture write time", Math.round(end - start))
             }
         }
         if (saveScreenshot) {
@@ -538,7 +564,7 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
         fpsDisplay.innerHTML = `Avg. FPS ${Math.round((1000.0 * numFrames) / totalTimeMS)}<br/>
             Avg. pass time: ${averageComputeTime}ms<br/>
             Pass # ${volumeRC.numPasses}<br/>
-            Speculation Count: ${volumeRC.speculationCount}<br/>
+            ${inferenceTime ? "Inference Time: " + inferenceTime + "ms<br/>" : ""}
             Total pipeline time: ${Math.round(volumeRC.totalPassTime)}ms`;
     }
 })();

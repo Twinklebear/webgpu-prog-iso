@@ -152,6 +152,9 @@ RadixSorter.prototype.sort = async function(keys, values, size, reverse) {
     var chunkCount = nextPow2(Math.ceil(size / SortChunkSize));
     var alignedSize = chunkCount * SortChunkSize;
     var numMergeSteps = Math.log2(chunkCount);
+    if (chunkCount > 65535) {
+        alert(`Sort got ${chunkCount} blocks, more than max 65535! Try reducing start spec count.`);
+    }
 
     var buffers = {
         keys: keys,
