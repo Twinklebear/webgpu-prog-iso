@@ -123,9 +123,9 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
 
     var recordVisibleBlocksUI = document.getElementById("recordVisibleBlocks")
     var resolution = document.getElementById("resolution");
-    var resolutionToDivisor = {"full": 1, "threefourths": 0.75, "half": 0.5, "quarter": 0.25};
-    var width = canvas.width * resolutionToDivisor[resolution.value];
-    var height = canvas.height * resolutionToDivisor[resolution.value];
+    var resolutionDims = {"1080": [1920, 1088], "720": [1280, 720], "360": [640, 368]};
+    var width = resolutionDims[resolution.value][0];
+    var height = resolutionDims[resolution.value][1];
     
     var session;
     try { 
@@ -133,8 +133,7 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
             { executionProviders: ['webgpu'], graphOptimizationLevel: 'all'});
         console.log(session);
         var imageReadbackArray = new Uint8ClampedArray(width * height);
-        var inputTensor = imageDataToTensor(imageReadbackArray, [1, 3, width, height]);
-        await runInference(session, inputTensor, width);
+        var inputTensor = imageDataToTensor(imageReadbackArray, [1, 3, height, width]);
     } catch (e) {
         console.log(e);
     }
@@ -144,9 +143,23 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
         new VolumeRaycaster(device, width, height, recordVisibleBlocksUI, enableSpeculationUI, parseInt(headstartSlider.value));
 
     resolution.onchange = async () => {
-        width = canvas.width * resolutionToDivisor[resolution.value];
-        height = canvas.height * resolutionToDivisor[resolution.value];
+        width = resolutionDims[resolution.value][0];
+        height = resolutionDims[resolution.value][1];
         console.log(`Changed resolution to ${width}x${height}`);
+
+        // canvas.width = width;
+        // canvas.height = height;
+        // var commandEncoder = device.createCommandEncoder();
+        // var uploadResolution = device.createBuffer(
+        //     {size: 2 * 4, usage: GPUBufferUsage.COPY_SRC, mappedAtCreation: true});
+        // new Uint32Array(uploadResolution.getMappedRange()).set([canvas.width, canvas.height]);
+        // uploadResolution.unmap();
+        // commandEncoder.copyBufferToBuffer(uploadResolution, 0, resolutionBuffer, 0, 2 * 4);
+        // device.queue.submit([commandEncoder.finish()]);
+        // camera = new ArcballCamera(defaultEye, center, up, 4, [
+        //     width,
+        //     height,
+        // ]);
 
         volumeRC = new VolumeRaycaster(
             device, width, height, recordVisibleBlocksUI, enableSpeculationUI, parseInt(headstartSlider.value));
@@ -168,11 +181,7 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
 
         session = await InferenceSession.create(`./noof${width}.onnx`, 
             { executionProviders: ['webgpu'], graphOptimizationLevel: 'all'});
-        console.log(session);
         cleanRecurrentState();
-        var imageReadbackArray = new Uint8ClampedArray(width * height);
-        var inputTensor = imageDataToTensor(imageReadbackArray, [1, 3, width, height]);
-        await runInference(session, inputTensor, width);
     };
     headstartSlider.onchange = async () => {
         volumeRC = new VolumeRaycaster(
@@ -457,6 +466,7 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
         if (isovalueSlider.value != currentIsovalue) {
             recomputeSurface = true;
             currentIsovalue = parseFloat(isovalueSlider.value);
+            cleanRecurrentState();
         }
 
         if (recomputeSurface || !surfaceDone) {
@@ -516,45 +526,50 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
         
                 await imageBuffer.mapAsync(GPUMapMode.READ);
                 var imageReadbackArray = new Uint8ClampedArray(imageBuffer.getMappedRange());
-                var inputTensor = imageDataToTensor(imageReadbackArray, [1, 3, width, height]);
+                var inputTensor = imageDataToTensor(imageReadbackArray, [1, 3, height, width]);
                 imageBuffer.unmap();
-                var [results, inferenceTime] = await runInference(session, inputTensor, width);
-                // console.log("results", results);
-                console.log("inference time", inferenceTime);
-                var textureData = new Uint8ClampedArray(results.length + width * height);
-                // var min = 32767, max = 0;
-                // for (var i = 0; i < results.length; i++) {
-                //     if (results[i] < min) {
-                //         min = results[i];
-                //     }
-                //     if (results[i] > max) {
-                //         max = results[i]
-                //     }
-                // }
-                // console.log("min", min);
-                // console.log("max", max);
-                // let testCanvas = document.getElementById("test-canvas");
-                // let ctx = testCanvas.getContext("2d");
-                // let idata = ctx.createImageData(canvas.width, canvas.height);
-                // idata.data.set(textureData);
-                // ctx.putImageData(idata, 0, 0);
-
-                var start = new Date();
-                for (var i = 0; i < width * height; i++) {
-                    textureData[i * 4] = results[i] * 255;
-                    textureData[i * 4 + 1] = results[i + width * height] * 255;
-                    textureData[i * 4 + 2] = results[i + 2 * width * height] * 255;
-                    textureData[i * 4 + 3] = 255;
+                try {
+                    var [results, inferenceTime] = await runInference(session, inputTensor, width, height);
+                    // console.log("results", results);
+                    console.log("inference time", inferenceTime);
+                    var textureData = new Uint8ClampedArray(results.length + width * height);
+                    // var min = 32767, max = 0;
+                    // for (var i = 0; i < results.length; i++) {
+                    //     if (results[i] < min) {
+                    //         min = results[i];
+                    //     }
+                    //     if (results[i] > max) {
+                    //         max = results[i]
+                    //     }
+                    // }
+                    // console.log("min", min);
+                    // console.log("max", max);
+                    // let testCanvas = document.getElementById("test-canvas");
+                    // let ctx = testCanvas.getContext("2d");
+                    // let idata = ctx.createImageData(canvas.width, canvas.height);
+                    // idata.data.set(textureData);
+                    // ctx.putImageData(idata, 0, 0);
+    
+                    var start = new Date();
+                    for (var i = 0; i < width * height; i++) {
+                        textureData[i * 4] = results[i] * 255;
+                        textureData[i * 4 + 1] = results[i + width * height] * 255;
+                        textureData[i * 4 + 2] = results[i + 2 * width * height] * 255;
+                        textureData[i * 4 + 3] = 255;
+                    }
+                    device.queue.writeTexture(
+                        { texture: volumeRC.renderTarget }, 
+                        textureData, 
+                        { bytesPerRow: width * 4 }, 
+                        { width: width, height: height}
+                    );
+                    await device.queue.onSubmittedWorkDone();
+                    var end = new Date();
+                    console.log("Texture write time", Math.round(end - start))
+                } catch (e) {
+                    console.log("ERROR WITH INFERENCE, CHECK DIMENSIONS");
+                    console.log(e)
                 }
-                device.queue.writeTexture(
-                    { texture: volumeRC.renderTarget }, 
-                    textureData, 
-                    { bytesPerRow: width * 4 }, 
-                    { width: width, height: height}
-                );
-                await device.queue.onSubmittedWorkDone();
-                var end = new Date();
-                console.log("Texture write time", Math.round(end - start))
             }
             if (surfaceDone) {
                 perfStats.push(

@@ -7,7 +7,7 @@ export function cleanRecurrentState() {
     recurrentState = false;
 }
 
-export async function runInference(session, preprocessedData, width) {
+export async function runInference(session, preprocessedData, width, height) {
     // Get start time to calculate inference time.
     // create feeds with the input name from model export and the preprocessed data.
     const feeds = {};
@@ -17,10 +17,11 @@ export async function runInference(session, preprocessedData, width) {
         if (recurrentState) {
             feeds[session.inputNames[i + 1]] = recurrentState[i];
         } else {
-            var dim = width / 2**i;
+            var w = width / 2**i;
+            var h = height / 2**i;
             feeds[session.inputNames[session.inputNames.length - i - 1]] = new Tensor("float32", 
-                new Float32Array(architecture[i] * dim * dim), 
-                [1, architecture[i], dim, dim]
+                new Float32Array(architecture[i] * w * h), 
+                [1, architecture[i], h, w]
             );
         }
     }
@@ -76,7 +77,6 @@ export async function getImageTensorFromPath(path, dims) {
   
     // 4. convert to float32
     let i, l = transposedData.length; // length, we need this for the loop
-    // create the Float32Array size 3 * 224 * 224 for these dimensions output
     const float32Data = new Float32Array(dims[1] * dims[2] * dims[3]);
     for (i = 0; i < l; i++) {
       float32Data[i] = transposedData[i] / 255.0; // convert to float
