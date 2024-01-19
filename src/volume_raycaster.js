@@ -1452,6 +1452,7 @@ VolumeRaycaster.prototype.renderSurface = async function(
         this.totalPassTime = 0;
         this.numPasses = 0;
         this.renderID = Date.now().toString().slice(-6);
+        this.imageCompleteness = 0;
         this.speculationCount = this.startSpecCount;
         this.speculationEnabled = this.enableSpeculationUI.checked;
 
@@ -1540,7 +1541,7 @@ VolumeRaycaster.prototype.renderSurface = async function(
         var commandEncoder = this.device.createCommandEncoder();
         if (this.speculationEnabled) {
             this.speculationCount =
-                Math.min(Math.floor(this.width * this.height * this.startSpecCount / numRaysActive), 64);
+                Math.min(Math.floor(this.width * this.height * this.startSpecCount / numRaysActive), this.startSpecCount * 64);
         } else {
             this.speculationCount = this.startSpecCount;
         }
@@ -1727,7 +1728,7 @@ VolumeRaycaster.prototype.renderSurface = async function(
             if (this.speculationEnabled) {
                 var commandEncoder = this.device.createCommandEncoder();
                 this.speculationCount =
-                    Math.min(Math.floor(this.width * this.height * this.startSpecCount / numRaysActive), 64);
+                    Math.min(Math.floor(this.width * this.height * this.startSpecCount / numRaysActive), this.startSpecCount * 64);
                 // console.log(`Next pass speculation count is ${this.speculationCount}`);
                 var uploadSpeculationCount = this.device.createBuffer(
                     {size: 4, usage: GPUBufferUsage.COPY_SRC, mappedAtCreation: true});
@@ -1758,11 +1759,11 @@ VolumeRaycaster.prototype.renderSurface = async function(
     this.numPasses += 1;
     //}
     this.renderComplete = numRaysActive == 0;
-    var imageCompleteness = (this.width * this.height - numRaysActive) / (this.width * this.height);
-    this.passPerfStats["imageCompleteness"] = imageCompleteness;
+    this.imageCompleteness = (this.width * this.height - numRaysActive) / (this.width * this.height);
+    this.passPerfStats["imageCompleteness"] = this.imageCompleteness;
     this.passPerfStats["imageCompletenessThreshold"] = parseFloat(document.getElementById("completenessThreshold").value);
-    if ( imageCompleteness >= parseFloat(document.getElementById("completenessThreshold").value)) { 
-        console.log(`Render complete with image completeness: ${imageCompleteness}`)
+    if ( this.imageCompleteness >= parseFloat(document.getElementById("completenessThreshold").value)) { 
+        console.log(`Render complete with image completeness: ${this.imageCompleteness}`)
         this.renderComplete = true;        
     }
     if (this.renderComplete) {

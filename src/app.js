@@ -91,8 +91,13 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
         alert(`Failed to load compressed data`);
         return;
     }
+    var resolution = document.getElementById("resolution");
+    var resolutionDims = {"1080": [1920, 1088], "720": [1280, 720], "360": [640, 368]};
+    var width = resolutionDims[resolution.value][0];
+    var height = resolutionDims[resolution.value][1];
+    
     var imageBuffer = device.createBuffer({
-        size: canvas.width * canvas.height * 4,
+        size: width * height * 4,
         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
     });
     var resolutionBuffer = device.createBuffer({
@@ -120,13 +125,8 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
 
     var enableSpeculationUI = document.getElementById("enableSpeculation");
     enableSpeculationUI.checked = true;
-
     var recordVisibleBlocksUI = document.getElementById("recordVisibleBlocks")
-    var resolution = document.getElementById("resolution");
-    var resolutionDims = {"1080": [1920, 1088], "720": [1280, 720], "360": [640, 368]};
-    var width = resolutionDims[resolution.value][0];
-    var height = resolutionDims[resolution.value][1];
-    
+
     var session;
     try { 
         session = await InferenceSession.create(`./noof${width}.onnx`, 
@@ -138,6 +138,7 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
         console.log(e);
     }
 
+    var outCanvas = document.getElementById("out-canvas");
     var headstartSlider = document.getElementById("startSpecCount");
     var volumeRC =
         new VolumeRaycaster(device, width, height, recordVisibleBlocksUI, enableSpeculationUI, parseInt(headstartSlider.value));
@@ -146,7 +147,8 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
         width = resolutionDims[resolution.value][0];
         height = resolutionDims[resolution.value][1];
         console.log(`Changed resolution to ${width}x${height}`);
-
+        outCanvas.width = width;
+        outCanvas.height = height;
         // canvas.width = width;
         // canvas.height = height;
         // var commandEncoder = device.createCommandEncoder();
@@ -491,15 +493,16 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
             totalMemDisplay.innerHTML = `Total Memory: ${memUse[2]}`;
 
             if (document.getElementById("outputImages").checked) {
-                if (volumeRC.numPasses == 1 || surfaceDone){
+                // if (volumeRC.numPasses == 1 || surfaceDone){
                     var filename = dataset.name.replace(/_/g, '').substring(0, 5);
                     if (currentBenchmark) {
                         if (currentBenchmark.name.includes("rotate")) {
                             filename = filename + "_seq" + cameraBenchmark.renderID + "_" + cameraBenchmark.iteration;
-                            if (volumeRC.numPasses == 1) {
-                                filename += "_001spp";
-                            } else {
+                            filename += "_" + Math.floor(volumeRC.imageCompleteness * 100);
+                            if (surfaceDone) {
                                 filename += "_ref";
+                            } else {
+                                filename += `_${String(volumeRC.numPasses).padStart(4,'0')}spp`;
                             }
                         } else {
                             filename += volumeRC.renderID + "_" + String(volumeRC.numPasses).padStart(4,'0');
@@ -514,7 +517,7 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
                         volumeRC.renderTarget,
                         imageBuffer,
                         document.getElementById('out-canvas'));
-                }
+                // }
             }
             if (document.getElementById("infer").checked && surfaceDone) {
                 var commandEncoder = device.createCommandEncoder();

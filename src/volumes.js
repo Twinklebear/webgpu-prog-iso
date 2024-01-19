@@ -93,7 +93,7 @@ export var datasets = {
     chameleon: {
         compressionRate: 2,
         name: "chameleon_1024x1024x1080_uint16.raw.crate2",
-        range: [11000, 52000],
+        range: [11000, 33000],
         scale: [1, 1, 1],
         step: 1.0 / 8192,
     },
@@ -114,9 +114,9 @@ export var datasets = {
     jicf_q: {
         compressionRate: 2,
         name: "jicf_q_1408x1080x1100_float32.raw.crate2",
-        range: [-15, 15],
+        range: [-1, 1],
         scale: [1, 1, 1],
-        step: 30 / 100
+        step: 6 / 100
     },
     truss: {
         compressionRate: 2,
