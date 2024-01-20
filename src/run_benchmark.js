@@ -1,9 +1,10 @@
-import { vec3 } from "gl-matrix";
-const benchmarkIterations = 100;
+import {vec3} from "gl-matrix";
+import {datasets} from "./volumes";
+const benchmarkIterations = 20;
 const cameraIterations = 10;
 const rotateIterations = 10;
 
-export var RandomIsovalueBenchmark = function(isovalueSlider, range) {
+export var RandomIsovalueBenchmark = function (isovalueSlider, range) {
     this.name = "random";
     this.iteration = 0;
     this.isovalueSlider = isovalueSlider;
@@ -11,7 +12,7 @@ export var RandomIsovalueBenchmark = function(isovalueSlider, range) {
     this.numIterations = benchmarkIterations;
 };
 
-RandomIsovalueBenchmark.prototype.run = function() {
+RandomIsovalueBenchmark.prototype.run = function () {
     if (this.iteration == this.numIterations) {
         return false;
     }
@@ -21,11 +22,11 @@ RandomIsovalueBenchmark.prototype.run = function() {
     return true;
 };
 
-RandomIsovalueBenchmark.prototype.reset = function() {
+RandomIsovalueBenchmark.prototype.reset = function () {
     this.iteration = 0;
 };
 
-export var SweepIsovalueBenchmark = function(isovalueSlider, range, sweepUp) {
+export var SweepIsovalueBenchmark = function (isovalueSlider, range, sweepUp) {
     this.iteration = 0;
     this.isovalueSlider = isovalueSlider;
     this.range = range;
@@ -40,7 +41,7 @@ export var SweepIsovalueBenchmark = function(isovalueSlider, range, sweepUp) {
     }
 };
 
-SweepIsovalueBenchmark.prototype.run = function() {
+SweepIsovalueBenchmark.prototype.run = function () {
     if (this.iteration == this.numIterations) {
         return false;
     }
@@ -56,12 +57,12 @@ SweepIsovalueBenchmark.prototype.run = function() {
 };
 
 // ManualSingleBenchmark just re-runs whatever current isovalue we have picked
-export var ManualSingleBenchmark = function() {
+export var ManualSingleBenchmark = function () {
     this.done = false;
     this.name = "manualSingle";
 };
 
-ManualSingleBenchmark.prototype.run = function() {
+ManualSingleBenchmark.prototype.run = function () {
     if (this.done) {
         return false;
     }
@@ -69,22 +70,22 @@ ManualSingleBenchmark.prototype.run = function() {
     return true;
 };
 
-ManualSingleBenchmark.prototype.reset = function() {
+ManualSingleBenchmark.prototype.reset = function () {
     this.done = false;
 };
 
-SweepIsovalueBenchmark.prototype.reset = function() {
+SweepIsovalueBenchmark.prototype.reset = function () {
     this.iteration = 0;
 };
 
-export var CameraOrbitBenchmark = function(radius) {
+export var CameraOrbitBenchmark = function (radius) {
     this.iteration = 0;
     this.name = "cameraOrbit";
     this.numIterations = cameraIterations;
     this.radius = radius;
 };
 
-CameraOrbitBenchmark.prototype.run = function() {
+CameraOrbitBenchmark.prototype.run = function () {
     if (this.iteration == this.numIterations) {
         return false;
     }
@@ -103,15 +104,15 @@ CameraOrbitBenchmark.prototype.run = function() {
 
     this.currentPoint = vec3.set(vec3.create(), x, y, z);
     this.iteration += 1;
-    
+
     return true;
 };
 
-CameraOrbitBenchmark.prototype.reset = function() {
+CameraOrbitBenchmark.prototype.reset = function () {
     this.iteration = 0;
 };
 
-export var RotateBenchmark = function(radius, width, height) {
+export var RotateBenchmark = function (radius, width, height) {
     this.iteration = 0;
     this.name = "rotate";
     this.numIterations = rotateIterations;
@@ -135,7 +136,7 @@ export var RotateBenchmark = function(radius, width, height) {
     this.endY = Math.random() * this.height;
 };
 
-RotateBenchmark.prototype.run = function() {
+RotateBenchmark.prototype.run = function () {
     if (this.iteration == this.numIterations) {
         return false;
     }
@@ -148,7 +149,7 @@ RotateBenchmark.prototype.run = function() {
     return true;
 };
 
-RotateBenchmark.prototype.reset = function() {
+RotateBenchmark.prototype.reset = function () {
     this.renderID = Date.now().toString().slice(-6);
     this.iteration = 0;
     var theta = Math.random() * 2 * Math.PI; // Azimuthal angle
@@ -166,14 +167,14 @@ RotateBenchmark.prototype.reset = function() {
     this.endY = Math.random() * this.height;
 };
 
-export var NestedBenchmark = function(outerLoop, innerLoop) {
+export var NestedBenchmark = function (outerLoop, innerLoop) {
     this.name = outerLoop.name + "-" + innerLoop.name;
     this.outerLoop = outerLoop;
     this.innerLoop = innerLoop;
     this.iteration = 0;
 };
 
-NestedBenchmark.prototype.run = function() {
+NestedBenchmark.prototype.run = function () {
     if (this.iteration == 0) {
         this.outerLoop.run();
     }
@@ -186,5 +187,43 @@ NestedBenchmark.prototype.run = function() {
     }
     this.iteration += 1;
     return true;
+}
+
+// Generate the list of benchmark configurations
+// we're going to run in autobenchmark mode
+export function generateBenchmarkConfigurations() {
+    // Do we really need to go up to ssc 8?
+    const startSpecCounts = [1, 2];//, 4, 8];
+    //const resolutions = ["1080", "720", "360"];
+    const resolutions = ["720", "360"];
+    const imageCompleteness = [0.8];
+    const datasets = ["skull",
+        "tacc_turbulence",
+        "magnetic",
+        "kingsnake",
+        "chameleon",
+        "beechnut",
+        "miranda",
+        "jicf_q",
+        "dns_large",
+        "richtmyer_meshkov"
+    ];
+
+    let benchmarks = [];
+    for (const d of datasets) {
+        for (const ic of imageCompleteness) {
+            for (const r of resolutions) {
+                for (const ssc of startSpecCounts) {
+                    benchmarks.push({
+                        dataset: d,
+                        imageCompleteness: ic,
+                        resolution: r,
+                        startSpecCount: ssc
+                    });
+                }
+            }
+        }
+    }
+    return benchmarks;
 }
 
