@@ -65,6 +65,7 @@ import {InferenceSession} from "onnxruntime-web/webgpu";
     var saveScreenshot = false;
 
     var benchmarkConfigs = generateBenchmarkConfigurations();
+    console.log(`# of benchmarkConfigs to run ${benchmarkConfigs.length}`);
 
     var dataset = datasets.skull;
     let autobenchmarkIndex = -1;
@@ -90,6 +91,10 @@ import {InferenceSession} from "onnxruntime-web/webgpu";
         console.log(autobenchmarkConfig);
         dataset = datasets[autobenchmarkConfig.dataset];
         console.log(dataset);
+
+        document.getElementById("autobenchmark-status-div").hidden = false;
+        document.getElementById("autobenchmark-status").innerHTML =
+            `Autobenchmark ${autobenchmarkIndex + 1}/${benchmarkConfigs.length}`;
     }
 
     var volumeDims = getVolumeDimensions(dataset.name);
@@ -460,7 +465,7 @@ import {InferenceSession} from "onnxruntime-web/webgpu";
                         window.location.reload();
                     } else {
                         console.log('Autobenchmark complete');
-                        document.getElementById("autobenchmark-complete").hidden = false;
+                        document.getElementById("autobenchmark-status").innerHTML = "Autobenchmark Complete!";
                     }
                 }
             } else if (currentBenchmark.name.includes("cameraOrbit")) {
