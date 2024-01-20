@@ -625,7 +625,14 @@ import {InferenceSession} from "onnxruntime-web/webgpu";
             if (surfaceDone) {
                 perfStats.push(
                     {
-                        "isovalue": currentIsovalue, "stats": volumeRC.surfacePerfStats, "inferenceTime": inferenceTime
+                        "isovalue": currentIsovalue,
+                        "stats": volumeRC.surfacePerfStats,
+                        "inferenceTime": inferenceTime,
+                        "config": {
+                            "resolution": [width, height],
+                            "startSpecCount": headstartSlider.value,
+                            "completenessThreshold": completenessThreshold.value,
+                        }
                     });
             }
 
