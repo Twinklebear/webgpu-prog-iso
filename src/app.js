@@ -1,31 +1,28 @@
-import { datasets, getVolumeDimensions } from "./volumes";
-import { VolumeRaycaster } from "./volume_raycaster";
-import { RandomIsovalueBenchmark, ManualSingleBenchmark, SweepIsovalueBenchmark, NestedBenchmark, RotateBenchmark} from './run_benchmark';
-import { Controller, ArcballCamera } from "./webgl-util";
-import { display_render_frag_spv, display_render_vert_spv } from "./embedded_shaders";
-import { vec3, mat4 } from "gl-matrix";
-import { saveAs } from 'file-saver';
-import { imageDataToTensor, runInference, getImageTensorFromPath, cleanRecurrentState } from "./inference";
-import { InferenceSession } from "onnxruntime-web/webgpu";
+import {datasets, getVolumeDimensions} from "./volumes";
+import {VolumeRaycaster} from "./volume_raycaster";
+import {RandomIsovalueBenchmark, ManualSingleBenchmark, SweepIsovalueBenchmark, NestedBenchmark, RotateBenchmark, generateBenchmarkConfigurations} from './run_benchmark';
+import {Controller, ArcballCamera} from "./webgl-util";
+import {display_render_frag_spv, display_render_vert_spv} from "./embedded_shaders";
+import {vec3, mat4} from "gl-matrix";
+import {saveAs} from 'file-saver';
+import {imageDataToTensor, runInference, getImageTensorFromPath, cleanRecurrentState} from "./inference";
+import {InferenceSession} from "onnxruntime-web/webgpu";
 
 (async () => {
-    function runBenchmark(benchmark)
-    {
+    function runBenchmark(benchmark) {
         requestBenchmark = benchmark;
     }
 
-    function saveScreenShotButton()
-    {
+    function saveScreenShotButton() {
         saveScreenshot = true;
     }
 
     // Assumes the input renderTarget and outCanvas have the same image dimensions
-    async function takeScreenshot(device, name, renderTarget, imageBuffer, outCanvas)
-    {
+    async function takeScreenshot(device, name, renderTarget, imageBuffer, outCanvas) {
         var commandEncoder = device.createCommandEncoder();
         commandEncoder.copyTextureToBuffer({texture: renderTarget},
-                                        {buffer: imageBuffer, bytesPerRow: outCanvas.width * 4},
-                                        [outCanvas.width, outCanvas.height, 1]);
+            {buffer: imageBuffer, bytesPerRow: outCanvas.width * 4},
+            [outCanvas.width, outCanvas.height, 1]);
         device.queue.submit([commandEncoder.finish()]);
         await device.queue.onSubmittedWorkDone();
 
@@ -36,7 +33,7 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
         var imgData = context.createImageData(outCanvas.width, outCanvas.height);
         imgData.data.set(imageReadbackArray);
         context.putImageData(imgData, 0, 0);
-        outCanvas.toBlob(function(b) {
+        outCanvas.toBlob(function (b) {
             saveAs(b, `${name}.png`);
         }, "image/png");
 
@@ -67,11 +64,37 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
     var requestBenchmark = null;
     var saveScreenshot = false;
 
+    var benchmarkConfigs = generateBenchmarkConfigurations();
+    console.log(`# of benchmarkConfigs to run ${benchmarkConfigs.length}`);
+
     var dataset = datasets.skull;
+    let autobenchmarkIndex = -1;
     if (window.location.hash) {
-        var name = decodeURI(window.location.hash.substr(1));
-        console.log(`Linked to data set ${name}`);
-        dataset = datasets[name];
+        var urlParams = window.location.hash.substring(1).split("&");
+        for (let i = 0; i < urlParams.length; ++i) {
+            let str = decodeURI(urlParams[i]);
+            if (str.startsWith("dataset=")) {
+                let name = str.split("=")[1];
+                console.log(`Linked to data set ${name}`);
+                dataset = datasets[name];
+            } else if (str.startsWith("autobenchmark=")) {
+                autobenchmarkIndex = parseInt(str.split("=")[1]);
+                console.log(`Linked to autobenchmark ${autobenchmarkIndex}`);
+            }
+        }
+    }
+
+    let autobenchmarkConfig = null;
+    if (autobenchmarkIndex > -1) {
+        autobenchmarkConfig = benchmarkConfigs[autobenchmarkIndex];
+        console.log(`Running autobenchmark`);
+        console.log(autobenchmarkConfig);
+        dataset = datasets[autobenchmarkConfig.dataset];
+        console.log(dataset);
+
+        document.getElementById("autobenchmark-status-div").hidden = false;
+        document.getElementById("autobenchmark-status").innerHTML =
+            `Autobenchmark ${autobenchmarkIndex + 1}/${benchmarkConfigs.length}`;
     }
 
     var volumeDims = getVolumeDimensions(dataset.name);
@@ -83,7 +106,7 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
         volumeURL = "/models/bcmc-data/" + zfpDataName;
     }
     var compressedData =
-        await fetch(volumeURL).then((res) => res.arrayBuffer().then(function(arr) {
+        await fetch(volumeURL).then((res) => res.arrayBuffer().then(function (arr) {
             return new Uint8Array(arr);
         }));
 
@@ -95,7 +118,11 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
     var resolutionDims = {"1080": [1920, 1088], "720": [1280, 720], "360": [640, 368]};
     var width = resolutionDims[resolution.value][0];
     var height = resolutionDims[resolution.value][1];
-    
+    if (autobenchmarkConfig) {
+        width = resolutionDims[autobenchmarkConfig.resolution][0];
+        height = resolutionDims[autobenchmarkConfig.resolution][1];
+    }
+
     var imageBuffer = device.createBuffer({
         size: width * height * 4,
         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
@@ -128,9 +155,9 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
     var recordVisibleBlocksUI = document.getElementById("recordVisibleBlocks")
 
     var session;
-    try { 
-        session = await InferenceSession.create(`./noof${width}.onnx`, 
-            { executionProviders: ['webgpu'], graphOptimizationLevel: 'all'});
+    try {
+        session = await InferenceSession.create(`./noof${width}.onnx`,
+            {executionProviders: ['webgpu'], graphOptimizationLevel: 'all'});
         console.log(session);
         var imageReadbackArray = new Uint8ClampedArray(width * height);
         var inputTensor = imageDataToTensor(imageReadbackArray, [1, 3, height, width]);
@@ -138,8 +165,13 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
         console.log(e);
     }
 
+    let completenessThreshold = document.getElementById("completenessThreshold");
     var outCanvas = document.getElementById("out-canvas");
     var headstartSlider = document.getElementById("startSpecCount");
+    if (autobenchmarkConfig) {
+        completenessThreshold.value = autobenchmarkConfig.imageCompleteness;
+        headstartSlider.value = autobenchmarkConfig.startSpecCount;
+    }
     var volumeRC =
         new VolumeRaycaster(device, width, height, recordVisibleBlocksUI, enableSpeculationUI, parseInt(headstartSlider.value));
 
@@ -181,8 +213,8 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
             usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
         });
 
-        session = await InferenceSession.create(`./noof${width}.onnx`, 
-            { executionProviders: ['webgpu'], graphOptimizationLevel: 'all'});
+        session = await InferenceSession.create(`./noof${width}.onnx`,
+            {executionProviders: ['webgpu'], graphOptimizationLevel: 'all'});
         cleanRecurrentState();
     };
     headstartSlider.onchange = async () => {
@@ -224,18 +256,16 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
     var currentIsovalue = isovalueSlider.value;
 
     var cacheInfo = document.getElementById("cacheInfo");
-    var displayCacheInfo = function() {
+    var displayCacheInfo = function () {
         var percentActive = (volumeRC.numVisibleBlocks / volumeRC.totalBlocks) * 100;
-        cacheInfo.innerHTML = `Cache Space: ${
-      volumeRC.lruCache.cacheSize
-    } blocks
+        cacheInfo.innerHTML = `Cache Space: ${volumeRC.lruCache.cacheSize
+            } blocks
             (${(
-              (volumeRC.lruCache.cacheSize / volumeRC.totalBlocks) *
-              100
+                (volumeRC.lruCache.cacheSize / volumeRC.totalBlocks) *
+                100
             ).toFixed(2)} %
             of ${volumeRC.totalBlocks} total blocks)<br/>
-            # Cache Slots Available ${
-              volumeRC.lruCache.displayNumSlotsAvailable}<br/>
+            # Cache Slots Available ${volumeRC.lruCache.displayNumSlotsAvailable}<br/>
             <b>For this Pass:</b><br/>
             # Newly Decompressed: ${volumeRC.newDecompressed}<br/>
             # Visible Blocks: ${volumeRC.numVisibleBlocks}
@@ -283,7 +313,7 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
     var cameraChanged = true;
 
     var controller = new Controller();
-    controller.mousemove = function(prev, cur, evt) {
+    controller.mousemove = function (prev, cur, evt) {
         if (evt.buttons == 1) {
             cameraChanged = true;
             camera.rotate(prev, cur);
@@ -296,14 +326,14 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
             totalTimeMS = 0;
         }
     };
-    controller.wheel = function(amt) {
+    controller.wheel = function (amt) {
         cameraChanged = true;
         camera.zoom(amt * 0.05);
         numFrames = 0;
         totalTimeMS = 0;
     };
     controller.pinch = controller.wheel;
-    controller.twoFingerDrag = function(drag) {
+    controller.twoFingerDrag = function (drag) {
         cameraChanged = true;
         camera.pan(drag);
         numFrames = 0;
@@ -311,7 +341,7 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
     };
     controller.registerForCanvas(canvas);
 
-    var animationFrame = function() {
+    var animationFrame = function () {
         var resolve = null;
         var promise = new Promise((r) => (resolve = r));
         window.requestAnimationFrame(resolve);
@@ -370,6 +400,11 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
 
     var perfStats = [];
 
+    if (autobenchmarkConfig) {
+        requestBenchmark = "random";
+        document.getElementById("infer").checked = true;
+    }
+
     var recomputeSurface = true;
     var surfaceDone = false;
     var averageComputeTime = 0;
@@ -412,9 +447,27 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
         if (currentBenchmark && surfaceDone) {
             if (!currentBenchmark.run()) {
                 var blob = new Blob([JSON.stringify(perfStats)], {type: "text/plain"});
-                saveAs(blob, `perf-${dataset.name}-${currentBenchmark.name}.json`);
+                let outputName = `perf-${dataset.name}-${currentBenchmark.name}.json`;
+                if (autobenchmarkConfig) {
+                    outputName = `perf-${dataset.name}-${currentBenchmark.name}` +
+                        `-${autobenchmarkConfig.resolution}p` +
+                        `-${autobenchmarkConfig.startSpecCount}ssc` +
+                        `-${autobenchmarkConfig.imageCompleteness}ic.json`;
+                }
+                saveAs(blob, outputName);
 
                 currentBenchmark = null;
+
+                // Advance to the next benchmark
+                if (autobenchmarkConfig) {
+                    if (autobenchmarkIndex + 1 < benchmarkConfigs.length) {
+                        window.location.hash = `autobenchmark=${autobenchmarkIndex + 1}`;
+                        window.location.reload();
+                    } else {
+                        console.log('Autobenchmark complete');
+                        document.getElementById("autobenchmark-status").innerHTML = "Autobenchmark Complete!";
+                    }
+                }
             } else if (currentBenchmark.name.includes("cameraOrbit")) {
                 camera = new ArcballCamera(cameraBenchmark.currentPoint, center, up, 4, [
                     canvas.width,
@@ -494,39 +547,39 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
 
             if (document.getElementById("outputImages").checked) {
                 // if (volumeRC.numPasses == 1 || surfaceDone){
-                    var filename = dataset.name.replace(/_/g, '').substring(0, 5);
-                    if (currentBenchmark) {
-                        if (currentBenchmark.name.includes("rotate")) {
-                            filename = filename + "_seq" + cameraBenchmark.renderID + "_" + cameraBenchmark.iteration;
-                            filename += "_" + Math.floor(volumeRC.imageCompleteness * 100);
-                            if (surfaceDone) {
-                                filename += "_ref";
-                            } else {
-                                filename += `_${String(volumeRC.numPasses).padStart(4,'0')}spp`;
-                            }
+                var filename = dataset.name.replace(/_/g, '').substring(0, 5);
+                if (currentBenchmark) {
+                    if (currentBenchmark.name.includes("rotate")) {
+                        filename = filename + "_seq" + cameraBenchmark.renderID + "_" + cameraBenchmark.iteration;
+                        filename += "_" + Math.floor(volumeRC.imageCompleteness * 100);
+                        if (surfaceDone) {
+                            filename += "_ref";
                         } else {
-                            filename += volumeRC.renderID + "_" + String(volumeRC.numPasses).padStart(4,'0');
+                            filename += `_${String(volumeRC.numPasses).padStart(4, '0')}spp`;
                         }
+                    } else {
+                        filename += volumeRC.renderID + "_" + String(volumeRC.numPasses).padStart(4, '0');
                     }
-                    else {
-                        filename += volumeRC.renderID + "_" + String(volumeRC.numPasses).padStart(4,'0');
-                    }
-                    await takeScreenshot(
-                        device,
-                        filename,
-                        volumeRC.renderTarget,
-                        imageBuffer,
-                        document.getElementById('out-canvas'));
+                }
+                else {
+                    filename += volumeRC.renderID + "_" + String(volumeRC.numPasses).padStart(4, '0');
+                }
+                await takeScreenshot(
+                    device,
+                    filename,
+                    volumeRC.renderTarget,
+                    imageBuffer,
+                    document.getElementById('out-canvas'));
                 // }
             }
             if (document.getElementById("infer").checked && surfaceDone) {
                 var commandEncoder = device.createCommandEncoder();
                 commandEncoder.copyTextureToBuffer({texture: volumeRC.renderTarget},
-                                                {buffer: imageBuffer, bytesPerRow: width * 4},
-                                                [width, height, 1]);
+                    {buffer: imageBuffer, bytesPerRow: width * 4},
+                    [width, height, 1]);
                 device.queue.submit([commandEncoder.finish()]);
                 await device.queue.onSubmittedWorkDone();
-        
+
                 await imageBuffer.mapAsync(GPUMapMode.READ);
                 var imageReadbackArray = new Uint8ClampedArray(imageBuffer.getMappedRange());
                 var inputTensor = imageDataToTensor(imageReadbackArray, [1, 3, height, width]);
@@ -552,7 +605,7 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
                     // let idata = ctx.createImageData(canvas.width, canvas.height);
                     // idata.data.set(textureData);
                     // ctx.putImageData(idata, 0, 0);
-    
+
                     var start = new Date();
                     for (var i = 0; i < width * height; i++) {
                         textureData[i * 4] = results[i] * 255;
@@ -561,10 +614,10 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
                         textureData[i * 4 + 3] = 255;
                     }
                     device.queue.writeTexture(
-                        { texture: volumeRC.renderTarget }, 
-                        textureData, 
-                        { bytesPerRow: width * 4 }, 
-                        { width: width, height: height}
+                        {texture: volumeRC.renderTarget},
+                        textureData,
+                        {bytesPerRow: width * 4},
+                        {width: width, height: height}
                     );
                     await device.queue.onSubmittedWorkDone();
                     var end = new Date();
@@ -577,17 +630,25 @@ import { InferenceSession } from "onnxruntime-web/webgpu";
             if (surfaceDone) {
                 perfStats.push(
                     {
-                        "isovalue": currentIsovalue, "stats": volumeRC.surfacePerfStats, "inferenceTime": inferenceTime});
+                        "isovalue": currentIsovalue,
+                        "stats": volumeRC.surfacePerfStats,
+                        "inferenceTime": inferenceTime,
+                        "config": {
+                            "resolution": [width, height],
+                            "startSpecCount": headstartSlider.value,
+                            "completenessThreshold": completenessThreshold.value,
+                        }
+                    });
             }
 
         }
         if (saveScreenshot) {
             saveScreenshot = false;
             await takeScreenshot(device,
-                                 `${dataset.name}_prog_iso`,
-                                 volumeRC.renderTarget,
-                                 imageBuffer,
-                                 document.getElementById('out-canvas'));
+                `${dataset.name}_prog_iso`,
+                volumeRC.renderTarget,
+                imageBuffer,
+                document.getElementById('out-canvas'));
         }
 
         // Blit the image rendered by the raycaster onto the screen

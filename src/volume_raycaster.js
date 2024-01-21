@@ -1541,7 +1541,7 @@ VolumeRaycaster.prototype.renderSurface = async function(
         var commandEncoder = this.device.createCommandEncoder();
         if (this.speculationEnabled) {
             this.speculationCount =
-                Math.min(Math.floor(this.width * this.height * this.startSpecCount / numRaysActive), this.startSpecCount * 64);
+                Math.min(Math.floor(this.width * this.height * this.startSpecCount / numRaysActive), 64);
         } else {
             this.speculationCount = this.startSpecCount;
         }
@@ -1728,7 +1728,7 @@ VolumeRaycaster.prototype.renderSurface = async function(
             if (this.speculationEnabled) {
                 var commandEncoder = this.device.createCommandEncoder();
                 this.speculationCount =
-                    Math.min(Math.floor(this.width * this.height * this.startSpecCount / numRaysActive), this.startSpecCount * 64);
+                    Math.min(Math.floor(this.width * this.height * this.startSpecCount / numRaysActive), 64);
                 // console.log(`Next pass speculation count is ${this.speculationCount}`);
                 var uploadSpeculationCount = this.device.createBuffer(
                     {size: 4, usage: GPUBufferUsage.COPY_SRC, mappedAtCreation: true});

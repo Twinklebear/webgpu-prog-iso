@@ -146,3 +146,4 @@ export var getVolumeDimensions = function(filename) {
     var m = filename.match(fileRegex);
     return [parseInt(m[2]), parseInt(m[3]), parseInt(m[4])];
 };
+
