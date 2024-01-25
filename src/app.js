@@ -307,6 +307,7 @@ import {InferenceSession} from "onnxruntime-web/webgpu";
     var proj = mat4.perspective(
         mat4.create(), (50 * Math.PI) / 180.0, canvas.width / canvas.height, nearPlane, 1000);
     var projView = mat4.create();
+    var benchmarkRadius = 1.5;
 
     var numFrames = 0;
     var totalTimeMS = 0;
@@ -402,7 +403,8 @@ import {InferenceSession} from "onnxruntime-web/webgpu";
 
     if (autobenchmarkConfig) {
         requestBenchmark = "random";
-        document.getElementById("infer").checked = true;
+        document.getElementById("infer").checked = autobenchmarkConfig.infer;
+        benchmarkRadius = autobenchmarkConfig.radius;
     }
 
     var recomputeSurface = true;
@@ -419,26 +421,26 @@ import {InferenceSession} from "onnxruntime-web/webgpu";
                 var valueBenchmark =
                     new RandomIsovalueBenchmark(isovalueSlider, dataset.range);
                 // cameraBenchmark = new CameraOrbitBenchmark(1.5);
-                cameraBenchmark = new RotateBenchmark(1.5, canvas.width, canvas.height);
+                cameraBenchmark = new RotateBenchmark(benchmarkRadius, canvas.width, canvas.height);
                 currentBenchmark = new NestedBenchmark(valueBenchmark, cameraBenchmark);
             } else if (requestBenchmark == "sweepUp") {
                 var valueBenchmark =
                     new SweepIsovalueBenchmark(isovalueSlider, dataset.range, true);
                 // cameraBenchmark = new CameraOrbitBenchmark(1.5);
-                cameraBenchmark = new RotateBenchmark(1.5, canvas.width, canvas.height);
+                cameraBenchmark = new RotateBenchmark(benchmarkRadius, canvas.width, canvas.height);
                 currentBenchmark = new NestedBenchmark(valueBenchmark, cameraBenchmark);
             } else if (requestBenchmark == "sweepDown") {
                 var valueBenchmark =
                     new SweepIsovalueBenchmark(isovalueSlider, dataset.range, false);
                 // cameraBenchmark = new CameraOrbitBenchmark(1.5);
-                cameraBenchmark = new RotateBenchmark(1.5, canvas.width, canvas.height);
+                cameraBenchmark = new RotateBenchmark(benchmarkRadius, canvas.width, canvas.height);
                 currentBenchmark = new NestedBenchmark(valueBenchmark, cameraBenchmark);
             } else if (requestBenchmark == "manualSingle") {
                 currentBenchmark = new ManualSingleBenchmark();
                 recomputeSurface = true;
             } else {
                 // cameraBenchmark = new CameraOrbitBenchmark(1.5);
-                cameraBenchmark = new RotateBenchmark(1.5, canvas.width, canvas.height);
+                cameraBenchmark = new RotateBenchmark(benchmarkRadius, canvas.width, canvas.height);
                 currentBenchmark = cameraBenchmark;
             }
             requestBenchmark = null;
@@ -452,6 +454,7 @@ import {InferenceSession} from "onnxruntime-web/webgpu";
                     outputName = `perf-${dataset.name}-${currentBenchmark.name}` +
                         `-${autobenchmarkConfig.resolution}p` +
                         `-${autobenchmarkConfig.startSpecCount}ssc` +
+                        `-${autobenchmarkConfig.radius}r` +
                         `-${autobenchmarkConfig.imageCompleteness}ic.json`;
                 }
                 saveAs(blob, outputName);
